@@ -20,6 +20,7 @@ import { installShelfView } from './shelfView';
 import { installTruckMenu } from './truckMenu';
 import { installWaterMenu } from './waterMenu';
 import { MobileGuide } from './guide';
+import { openNote } from './checklist';
 import { installMobileDebug } from './debugMobile';
 import { applyGfx } from './gfx';
 
@@ -93,11 +94,14 @@ import { applyGfx } from './gfx';
     player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack;
     input.update(dt);
     guide.update(dt);
+    // 進器材室時自動翻開一次備料清單 (玩家不會知道 GNSS 要帶什麼)
+    if (!noteShown && field.phase === 'prep' && !player.isModalOpen() && app.currentLevelObj === field) { noteShown = true; openNote(field); }
     hud.update(dt);
     drive.update(dt);
   };
+  let noteShown = false;
   const origStart = field.start.bind(field);
-  field.start = () => { origStart(); player.cancelWalk(); player.syncAvatar(); cam.snap(); };
+  field.start = () => { noteShown = false; origStart(); player.cancelWalk(); player.syncAvatar(); cam.snap(); };
   const origStop = field.stop.bind(field);
   field.stop = () => { origStop(); player.avatar.visible = false; player.cancelWalk(); drive.hide(); };
 

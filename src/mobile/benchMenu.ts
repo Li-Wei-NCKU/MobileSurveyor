@@ -57,59 +57,177 @@ class BenchMenu {
   tribrach(g: AnyObj, opts: TribrachOpts = {}) {
     this.exit();
     g.recalculateTribrachPhysics?.();
-    let sub: 'main' | 'shift' | 'screw' = 'main';
-    let fine = false, slow = false, turns = 0, warned = false;
     const np = !!opts.noPlummet;
+    let warned = false;
+
+    // ---- 斜看視角的基座：盤面 + 三角分布的腳螺旋 + 圓水準器 ----
+    const PK = 0.42;                      // 斜看時 y 方向的壓縮
+    // 腳螺旋在圓盤外側的三角底板角上 (不然後面那顆會被盤子擋住)
+    const KN: Record<string, { x: number; y: number }> = {
+      A: { x: 78, y: 126 }, B: { x: 262, y: 126 }, C: { x: 170, y: 40 },
+    };
+    const knobSvg = (k: 'A' | 'B' | 'C') => {
+      const { x, y } = KN[k];
+      return `<g class="m-knob" data-s="${k}">
+        <path d="M${x - 27} ${y} v15 a27 11 0 0 0 54 0 v-15z" class="k-side"/>
+        <path d="M${x - 18} ${y + 6} v14M${x - 6} ${y + 9} v14M${x + 6} ${y + 9} v14M${x + 18} ${y + 6} v14" class="k-knurl"/>
+        <ellipse cx="${x}" cy="${y}" rx="27" ry="11" class="k-top"/>
+        <g class="k-ticks" data-k="${k}"></g>
+        <ellipse cx="${x}" cy="${y}" rx="9.5" ry="4" class="k-hub"/>
+        <text x="${x}" y="${y + 3.4}" class="k-label">${k}</text>
+      </g>`;
+    };
+    const scene = `<div class="m-tri3d">
+      <svg viewBox="0 0 340 196" class="m-tri-svg">
+        <ellipse cx="170" cy="166" rx="122" ry="22" class="t-shadow"/>
+        ${knobSvg('C')}
+        <path d="M78 126 L170 40 L262 126 L170 152 Z" class="t-arms"/>
+        <path d="M74 95 A96 41 0 0 0 266 95 L266 108 A96 41 0 0 1 74 108 Z" class="t-side"/>
+        <ellipse cx="170" cy="95" rx="96" ry="41" class="t-plate"/>
+        <ellipse cx="170" cy="95" rx="78" ry="32" class="t-plate2"/>
+        <g class="t-vial">
+          <ellipse cx="170" cy="88" rx="34" ry="15" class="v-glass"/>
+          <ellipse cx="170" cy="88" rx="10" ry="4.4" class="v-ring"/>
+          <ellipse class="v-bub" cx="170" cy="88" rx="7.5" ry="3.7"/>
+        </g>
+        ${knobSvg('A')}${knobSvg('B')}
+      </svg>
+      <div class="m-tri-hint">手指在 A／B／C 旋鈕上轉圈＝轉動腳螺旋</div>
+    </div>`;
+    const S = 44;
+    const dot = (x: number, y: number) => `cx="${(60 + Math.max(-1.3, Math.min(1.3, x)) * S).toFixed(1)}" cy="${(60 + Math.max(-1.3, Math.min(1.3, y)) * S).toFixed(1)}"`;
+    const pips = `<div class="m-pips">
+      ${np ? '' : `<figure class="m-plum"><svg viewBox="0 0 120 120" class="m-pip">
+        <circle cx="60" cy="60" r="56" class="bg"/>
+        <circle cx="60" cy="60" r="${0.10 * S}" class="tol"/>
+        <path d="M60 6V52M60 68V114M6 60H52M68 60H112" class="ret"/>
+        <circle class="mark" ${dot(g.centerX, g.centerY)} r="5.5"/>
+      </svg><figcaption>光學對點器<b class="v-cerr">${g.currentCenterErrorMm} mm</b><small>拖曳＝平移基座</small></figcaption></figure>`}
+      <figure><svg viewBox="0 0 120 120" class="m-pip vial">
+        <circle cx="60" cy="60" r="56" class="bg"/>
+        <circle cx="60" cy="60" r="${0.10 * S}" class="ring"/>
+        <circle class="bubble" ${dot(g.bubbleX, g.bubbleY)} r="7.5"/>
+      </svg><figcaption>圓水準器<b class="v-lerr">${g.currentLevelErrorMm} mm</b><small>放大看</small></figcaption></figure>
+    </div>`;
+
     const m = commandMenu({
-      title: opts.title || '基座定心、定平', sub: np ? '轉腳螺旋把氣泡趕進圈裡' : '平移基座對點、轉腳螺旋定平，兩個輪流修',
-      cls: 'm-tribrach', buttons: [], onPick: () => {},
-      onClose: () => { if (this.menu === m) this.menu = null; },
+      title: opts.title || '基座定心、定平',
+      sub: np ? '轉腳螺旋把氣泡趕進圈裡' : '拖對點器平移基座、轉腳螺旋把氣泡趕進圈裡',
+      cls: 'm-tribrach',
+      panel: scene + pips,
+      note: np ? '' : '轉腳螺旋會讓對點跑掉一點，兩個要輪流修。',
+      buttons: [{ id: 'lock', text: '鎖定', kind: 'primary' }],
+      onPick: (id) => { if (id === 'lock') lock(); },
+      onClose: () => { clearInterval(timer); if (this.menu === m) this.menu = null; },
     });
     this.menu = m;
-    const panel = () => {
-      const cx = g.centerX, cy = g.centerY, bx = g.bubbleX, by = g.bubbleY;
-      const S = 44; // 1 單位 = 44 px
-      const dot = (x: number, y: number) => `cx="${(60 + Math.max(-1.3, Math.min(1.3, x)) * S).toFixed(1)}" cy="${(60 + Math.max(-1.3, Math.min(1.3, y)) * S).toFixed(1)}"`;
-      const plummet = np ? '' : `
-        <figure><svg viewBox="0 0 120 120" class="m-pip">
-          <circle cx="60" cy="60" r="56" class="bg"/>
-          <circle cx="60" cy="60" r="${0.10 * S}" class="tol"/>
-          <path d="M60 6V52M60 68V114M6 60H52M68 60H112" class="ret"/>
-          <circle ${dot(cx, cy)} r="5.5" class="mark"/>
-        </svg><figcaption>光學對點器<b>${g.currentCenterErrorMm} mm</b></figcaption></figure>`;
-      const vial = `
-        <figure><svg viewBox="0 0 120 120" class="m-pip vial">
-          <circle cx="60" cy="60" r="56" class="bg"/>
-          <circle cx="60" cy="60" r="${0.10 * S}" class="ring"/>
-          <circle ${dot(bx, by)} r="7.5" class="bubble"/>
-        </svg><figcaption>圓水準器<b>${g.currentLevelErrorMm} mm</b></figcaption></figure>`;
-      return `<div class="m-pips">${plummet}${vial}</div>`;
+    const root = m.root;
+    const bub = root.querySelector('.v-bub') as SVGEllipseElement;
+    const flat = root.querySelector('.m-pip.vial .bubble') as SVGCircleElement;
+    const mark = root.querySelector('.m-pip .mark') as SVGCircleElement | null;
+    const lerr = root.querySelector('.v-lerr') as HTMLElement;
+    const cerr = root.querySelector('.v-cerr') as HTMLElement | null;
+
+    const update = () => {
+      const bx = Math.max(-1.35, Math.min(1.35, g.bubbleX)), by = Math.max(-1.35, Math.min(1.35, g.bubbleY));
+      bub.setAttribute('cx', (170 + bx * 20).toFixed(1));
+      bub.setAttribute('cy', (88 + by * 20 * PK).toFixed(1));
+      bub.classList.toggle('ok', !!g.isLeveled);
+      flat.setAttribute('cx', (60 + bx * S).toFixed(1));
+      flat.setAttribute('cy', (60 + by * S).toFixed(1));
+      lerr.textContent = `${g.currentLevelErrorMm} mm`;
+      lerr.classList.toggle('ok', !!g.isLeveled);
+      if (mark) {
+        mark.setAttribute('cx', (60 + Math.max(-1.3, Math.min(1.3, g.centerX)) * S).toFixed(1));
+        mark.setAttribute('cy', (60 + Math.max(-1.3, Math.min(1.3, g.centerY)) * S).toFixed(1));
+        mark.classList.toggle('ok', !!g.isCentered);
+      }
+      if (cerr) { cerr.textContent = `${g.currentCenterErrorMm} mm`; cerr.classList.toggle('ok', !!g.isCentered); }
+      (['A', 'B', 'C'] as const).forEach(k => {
+        const el = root.querySelector(`.k-ticks[data-k="${k}"]`) as SVGGElement;
+        if (!el) return;
+        const base = (g[`screw${k}`] || 0) * 36 * Math.PI / 180;
+        const { x, y } = KN[k];
+        let d = '';
+        for (let i = 0; i < 6; i++) {
+          const a = base + i * Math.PI / 3;
+          d += `M${(x + 14 * Math.cos(a)).toFixed(1)} ${(y + 14 * PK * Math.sin(a)).toFixed(1)}L${(x + 24 * Math.cos(a)).toFixed(1)} ${(y + 24 * PK * Math.sin(a)).toFixed(1)}`;
+        }
+        el.innerHTML = `<path d="${d}" class="k-tick"/>`;
+      });
     };
-    const disturb = () => {
-      turns++;
-      if (turns % 6 === 0 && roll() < 0.15) {
-        const k = ['A', 'B', 'C'][Math.floor(roll() * 3)];
-        g[`screw${k}`] += (roll() < 0.5 ? -0.3 : 0.3);
+
+    // ---- 直接轉旋鈕：手指繞著旋鈕畫圈 ----
+    let sound = 0;
+    const turn = (k: 'A' | 'B' | 'C', deg: number) => {
+      g[`screw${k}`] = (g[`screw${k}`] || 0) + deg / 36;   // 畫面轉多少，螺旋就轉多少
+      g.recalculateTribrachPhysics();
+      sound += Math.abs(deg);
+      if (sound > 22) { sound = 0; audio()?.playScrewRotate?.(); }
+      update();
+    };
+    root.querySelectorAll<SVGGElement>('.m-knob').forEach(el => {
+      const k = el.dataset.s as 'A' | 'B' | 'C';
+      let last = 0, on = false;
+      const ang = (e: PointerEvent) => {
+        const r = el.getBoundingClientRect();
+        return Math.atan2((e.clientY - (r.top + r.height / 2)) / PK, e.clientX - (r.left + r.width / 2));
+      };
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        on = true; last = ang(e); el.classList.add('hold');
+        try { el.setPointerCapture(e.pointerId); } catch { /* 合成事件沒有真的指標 */ }
+      });
+      el.addEventListener('pointermove', (e) => {
+        if (!on) return;
+        const a = ang(e);
+        let d = a - last;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        last = a;
+        turn(k, d * 180 / Math.PI);
+      });
+      const up = (e: PointerEvent) => { on = false; el.classList.remove('hold'); try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ } };
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+
+    // ---- 拖對點器 = 平移基座 (黑點跟著手指走) ----
+    const plum = root.querySelector('.m-plum .m-pip') as SVGSVGElement | null;
+    if (plum) {
+      let on = false, px = 0, py = 0;
+      plum.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        on = true; px = e.clientX; py = e.clientY;
+        try { plum.setPointerCapture(e.pointerId); } catch { /* 合成事件沒有真的指標 */ }
+      });
+      plum.addEventListener('pointermove', (e) => {
+        if (!on) return;
+        const r = plum.getBoundingClientRect();
+        const per = r.width * S / 120;         // 1 單位 = 幾 px
+        g.shiftX -= (e.clientX - px) / per;    // 黑點跟著手指
+        g.shiftY -= (e.clientY - py) / per;
+        px = e.clientX; py = e.clientY;
         g.recalculateTribrachPhysics();
+        update();
+      });
+      const up = (e: PointerEvent) => { on = false; try { plum.releasePointerCapture(e.pointerId); } catch { /* ignore */ } };
+      plum.addEventListener('pointerup', up);
+      plum.addEventListener('pointercancel', up);
+    }
+
+    // ---- 偶爾來一陣風 ----
+    const timer = window.setInterval(() => {
+      if (!m.open) return;
+      if (roll() < 0.12) {
+        const k = ['A', 'B', 'C'][Math.floor(roll() * 3)];
+        g[`screw${k}`] += (roll() < 0.5 ? -0.25 : 0.25);
+        g.recalculateTribrachPhysics();
+        update();
         ui.toast('一陣風吹過來，腳架微微晃了一下……', 'warn', 2200);
       }
-    };
-    const screw = (s: 'A' | 'B' | 'C', d: number) => {
-      const amt = slow ? 0.5 * d : d + (roll() - 0.5) * 0.4; // 一般轉有手感誤差
-      g[`screw${s}`] += amt;
-      audio()?.playScrewRotate?.();
-      g.recalculateTribrachPhysics();
-      disturb();
-      draw();
-    };
-    const shift = (dx: number, dy: number) => {
-      const k = fine ? 0.03 : 0.06;
-      g.shiftX += dx * k; g.shiftY += dy * k;
-      audio()?.playClick?.();
-      g.recalculateTribrachPhysics();
-      disturb();
-      draw();
-    };
+    }, 9000);
+
     const lock = () => {
       if (!(g.isCentered && g.isLeveled) && !warned) {
         warned = true;
@@ -117,6 +235,7 @@ class BenchMenu {
         ui.toast(`${what}還沒進圈。確定要這樣鎖定，再按一次「鎖定」。`, 'warn', 3200);
         return;
       }
+      clearInterval(timer);
       if (opts.onDone) { audio()?.playSuccessChime?.(); this.exit(); opts.onDone(); return; }
       g.finalCenteringErrorMm = parseFloat(g.currentCenterErrorMm || '0.4');
       g.finalLevelingErrorMm = parseFloat(g.currentLevelErrorMm || '0.1');
@@ -126,47 +245,8 @@ class BenchMenu {
       this.exit();
       this.app.updateMissionPanel(g.title, g.getTasks(), g.currentStep, `基座已鎖定（對心誤差 ${g.finalCenteringErrorMm} mm、氣泡殘差 ${g.finalLevelingErrorMm} mm）。點儀器量斜高。`);
     };
-    const draw = () => {
-      if (!m.open) return;
-      m.setPanel(panel());
-      let btns: MenuBtn[];
-      if (sub === 'main') {
-        btns = [
-          ...(np ? [] : [{ id: 'shift', text: '平移基座', sub: '鬆開中心螺旋，對光學對點器' }]),
-          { id: 'screw', text: '轉腳螺旋', sub: '看圓水準器' },
-          { id: 'lock', text: '鎖定', kind: 'primary' as const },
-        ];
-        m.setNote(np ? '' : '轉腳螺旋會讓對點跑掉一點，兩個要輪流修。');
-      } else if (sub === 'shift') {
-        btns = [
-          { id: 'u', text: '▲' }, { id: 'l', text: '◀' }, { id: 'r', text: '▶' }, { id: 'd', text: '▼' },
-          { id: 'fine', text: fine ? '微調：開' : '微調：關', kind: 'ghost' },
-          { id: 'back', text: '返回', kind: 'ghost' },
-        ];
-        m.setNote('把對點器裡的黑點移進紅圈。');
-      } else {
-        btns = [
-          { id: 'A+', text: 'A 順轉' }, { id: 'A-', text: 'A 逆轉' },
-          { id: 'B+', text: 'B 順轉' }, { id: 'B-', text: 'B 逆轉' },
-          { id: 'C+', text: 'C 順轉' }, { id: 'C-', text: 'C 逆轉' },
-          { id: 'slow', text: slow ? '慢慢轉：開' : '慢慢轉：關', kind: 'ghost' },
-          { id: 'back', text: '返回', kind: 'ghost' },
-        ];
-        m.setNote('A、B 在前面兩腳，C 在後面。一般轉比較快但手感會有誤差；慢慢轉準但要多轉幾次。');
-      }
-      m.root.classList.toggle('grid4', sub === 'shift');
-      m.root.classList.toggle('grid2', sub === 'screw');
-      m.setButtons(btns, (id) => {
-        if (id === 'shift') sub = 'shift'; else if (id === 'screw') sub = 'screw'; else if (id === 'back') sub = 'main';
-        else if (id === 'lock') { lock(); return; }
-        else if (id === 'fine') fine = !fine; else if (id === 'slow') slow = !slow;
-        else if (id === 'u') { shift(0, -1); return; } else if (id === 'd') { shift(0, 1); return; }
-        else if (id === 'l') { shift(-1, 0); return; } else if (id === 'r') { shift(1, 0); return; }
-        else if (/^[ABC][+-]$/.test(id)) { screw(id[0] as 'A', id[1] === '+' ? 1 : -1); return; }
-        draw();
-      });
-    };
-    draw();
+
+    update();
   }
 
   // ================================================================

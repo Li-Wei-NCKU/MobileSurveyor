@@ -785,6 +785,26 @@ export class FieldDay {
     return null;
   }
 
+  /** 手機版：後斗裡有什麼、拿不拿得出來 */
+  trunkList(): { uid: number; item: ItemId; blocked: string | null }[] {
+    return this.grid.placed.map(p => {
+      const b = this.grid.blockers(p);
+      return {
+        uid: p.uid, item: p.item,
+        blocked: b.length ? `被${b.map(x => ITEMS[x.item].name).join('、')}${b.some(x => x.layer > p.layer) ? '壓住' : '擋住'}` : null,
+      };
+    });
+  }
+  mobileTakeFromTrunk(uid: number) { this.takeFromTrunk(uid); }
+  /** 備料 / 清點清單用 */
+  packList(): { item: ItemId; name: string; loaded: boolean; inHand: boolean }[] {
+    return this.J.required.map(it => ({ item: it, name: ITEMS[it].name, loaded: this.grid.has(it), inHand: this.carrying === it }));
+  }
+  /** 後斗裡不是今天必帶的東西 (昨天沒卸的) */
+  extraInTrunk(): string[] {
+    return this.grid.placed.filter(p => !this.J.required.includes(p.item)).map(p => ITEMS[p.item].name);
+  }
+
   /** 手機版：點貨車 → 問要上車還是看後斗 */
   private openTruckUI(where: 'cab' | 'bed'): boolean {
     const fn = (window as AnyObj).__truckMenu;

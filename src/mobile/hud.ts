@@ -12,14 +12,16 @@ import { openAudioPanel } from '../field/sound';
 import { sheet, closeSheet } from './sheet';
 import { quickSaveMenu } from './quicksave';
 import { ITEMS } from '../field/items';
+import { noteApplies, noteHtml } from './checklist';
 
-interface Act { id: string; text: string; key?: string; accent?: boolean; on: () => void }
+interface Act { id: string; text: string; key?: string; accent?: boolean; minor?: boolean; on: () => void }
 
 export class MobileHud {
   root: HTMLElement;
   private top: HTMLElement;
   private hint: HTMLElement;
   private bar: HTMLElement;
+  private side: HTMLElement;
   private dial: HTMLElement;
   private dir = new THREE.Vector3();
   private t = 0;
@@ -42,11 +44,13 @@ export class MobileHud {
           <button type="button" data-a="audio" aria-label="聲音">🔊</button>
         </div>
       </div>
-      <div class="m-bar"></div>`;
+      <div class="m-bar"></div>
+      <div class="m-bar-side"></div>`;
     document.body.appendChild(this.root);
     this.top = this.root.querySelector('.m-top') as HTMLElement;
     this.hint = this.root.querySelector('.m-hint') as HTMLElement;
     this.bar = this.root.querySelector('.m-bar') as HTMLElement;
+    this.side = this.root.querySelector('.m-bar-side') as HTMLElement;
     this.dial = this.root.querySelector('.m-compass-dial') as HTMLElement;
     (this.root.querySelector('.m-compass') as HTMLElement).onclick = (e) => { e.stopPropagation(); this.zoomPanel(); };
     this.hint.onclick = () => this.openBook();
@@ -79,12 +83,13 @@ export class MobileHud {
     r.oninput = () => { const d = flip(Number(r.value)); cam.setDist(d); v.textContent = d.toFixed(0); };
   }
 
-  /** 外業手簿 (任務清單) 用 sheet 顯示 */
+  /** 外業手簿：設備清單 (格紋筆記本) ＋ 任務進度 */
   openBook() {
     const title = (document.getElementById('mission-title')?.textContent || '外業手簿');
     const list = document.getElementById('mission-task-list')?.innerHTML || '';
     const tip = document.getElementById('mission-tip-text')?.textContent || '';
-    sheet(title, `<ol class="task-list m-tasks">${list}</ol><div class="m-tip"><b>備註</b>${tip}</div>`, 'm-book');
+    const note = noteApplies(this.field) ? noteHtml(this.field) : '';
+    sheet(title, `${note}<ol class="task-list m-tasks">${list}</ol><div class="m-tip"><b>備註</b>${tip}</div>`, 'm-book');
   }
 
   private key(code: string) {
@@ -127,13 +132,15 @@ export class MobileHud {
     if (sig !== this.sig) {
       this.sig = sig;
       this.bar.innerHTML = '';
+      this.side.innerHTML = '';
       acts.forEach(a => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = `m-act${a.accent ? ' accent' : ''}`;
+        // 次要動作 (放下) 縮到右下角，不要跟任務指引搶注意力
+        b.className = `m-act${a.accent ? ' accent' : ''}${a.minor ? ' minor' : ''}`;
         b.innerHTML = `<span>${a.text}</span>`;
         b.onclick = (e) => { e.stopPropagation(); closeSheet(); a.on(); };
-        this.bar.appendChild(b);
+        (a.minor ? this.side : this.bar).appendChild(b);
       });
     }
   }
@@ -142,7 +149,7 @@ export class MobileHud {
     const fd = this.field;
     const out: Act[] = [];
     if (fd.inTruck) return out; // 開車由 driveTouch 接管
-    if (fd.carrying) out.push({ id: 'drop', text: `放下${ITEMS[fd.carrying].name}`, on: () => this.key('KeyG') });
+    if (fd.carrying) out.push({ id: 'drop', text: '放下', minor: true, on: () => this.key('KeyG') });
     // 喝水沒有常駐按鍵：點地上或後斗的礦泉水時才出現選項 (waterMenu / truckMenu)
     const sub = (fd as AnyObj).sub;
     if (sub) {

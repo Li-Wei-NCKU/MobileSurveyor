@@ -41,6 +41,8 @@ body { touch-action: manipulation; }
 .m-act .cap { transform: scale(.85); }
 .m-act.accent { background: var(--survey-yellow); color: #111; border-color: #a07400; animation: m-pulse 1s ease-in-out infinite alternate; }
 @keyframes m-pulse { from { box-shadow: 0 4px 12px rgba(0,0,0,.35); } to { box-shadow: 0 0 0 6px rgba(233,179,8,.35); } }
+.m-bar-side { position: absolute; right: 10px; bottom: calc(var(--sab) + var(--m-bar-h) + 66px); display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+.m-act.minor { min-height: 40px; padding: 6px 12px; font: 600 13px var(--font-ui); background: rgba(20,29,38,.55); border-color: rgba(255,255,255,.22); color: rgba(255,255,255,.82); box-shadow: none; }
 .m-walkchip { position: fixed; left: 12px; right: 12px; margin: 0 auto; width: fit-content; bottom: calc(var(--sab) + var(--m-bar-h) + 14px); z-index: 41; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.92); color: #1f2d3d; font: 700 14px var(--font-ui); box-shadow: 0 4px 12px rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .m-walkchip.show { opacity: 1; }
 .m-walkchip::before { content: '➜ '; color: #d97706; }
@@ -264,3 +266,60 @@ body:has(.m-cmd-backdrop) .m-goal, body:has(.dialog-backdrop) .m-goal { display:
 
 /* 手機版不顯示鍵盤鍵帽 */
 kbd.cap { display: none !important; }
+
+/* ---------- 格紋筆記本清單 ---------- */
+.m-note {
+  position: relative; margin: 2px 0 10px; padding: 12px 14px 10px 18px; border-radius: 4px;
+  color: #27408b; font-family: var(--font-hand);
+  background-color: #fdfcf2;
+  background-image:
+    linear-gradient(rgba(70,110,160,.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70,110,160,.16) 1px, transparent 1px);
+  background-size: 20px 20px, 20px 20px;
+  box-shadow: 0 2px 8px rgba(31,45,61,.18), inset 0 0 0 1px rgba(31,45,61,.12);
+}
+.m-note::before { content: ''; position: absolute; left: 9px; top: 0; bottom: 0; width: 1.5px; background: rgba(200,60,60,.45); }
+.m-note-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.m-note-head b { font-size: 19px; font-weight: 700; letter-spacing: .04em; border-bottom: 2px solid rgba(39,64,139,.35); }
+.m-note-head span { font-size: 12px; color: rgba(39,64,139,.7); }
+.m-note-list { list-style: none; margin: 0; padding: 0; }
+.m-note-list li { display: flex; align-items: center; gap: 9px; min-height: 30px; font-size: 17px; line-height: 1.25; }
+.m-note-list li i {
+  flex: none; width: 19px; height: 19px; border: 2px solid rgba(39,64,139,.75); border-radius: 2px;
+  display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 17px; font-weight: 700;
+  color: #c0392b; transform: rotate(-2deg);
+}
+.m-note-list li:nth-child(even) i { transform: rotate(1.5deg); }
+.m-note-list li i:not(:empty) { overflow: visible; }
+.m-note-list li.done span { text-decoration: line-through; text-decoration-color: rgba(192,57,43,.7); opacity: .62; }
+.m-note-list li em { font-style: normal; font-size: 12px; padding: 1px 7px; border-radius: 999px; background: rgba(242,183,5,.35); color: #7a5600; }
+.m-note-sum { margin-top: 6px; font-size: 15px; color: #c0392b; transform: rotate(-1deg); }
+.m-note-memo { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(39,64,139,.78); }
+.m-note-sheet .m-sheet-body { padding-top: 6px; }
+
+/* ---------- 基座定心定平（斜看 3D） ---------- */
+.m-tri3d { position: relative; margin: 2px 0 6px; }
+.m-tri-svg { display: block; width: 100%; height: auto; touch-action: none; }
+.m-tri-svg .t-shadow { fill: rgba(31,45,61,.14); }
+.m-tri-svg .t-arms { fill: #9aa5b1; stroke: #33404f; stroke-width: 2; stroke-linejoin: round; }
+.m-tri-svg .t-side { fill: #8e98a4; stroke: #33404f; stroke-width: 2; }
+.m-tri-svg .t-plate { fill: #c6ced8; stroke: #33404f; stroke-width: 2.4; }
+.m-tri-svg .t-plate2 { fill: #b3bdc9; stroke: rgba(51,64,79,.45); stroke-width: 1.4; }
+.m-tri-svg .v-glass { fill: #eaf4fb; stroke: #33404f; stroke-width: 2.2; }
+.m-tri-svg .v-ring { fill: none; stroke: #1f2d3d; stroke-width: 2; }
+.m-tri-svg .v-bub { fill: #7ed957; stroke: #2f6b1f; stroke-width: 1.6; transition: none; }
+.m-tri-svg .v-bub.ok { fill: #22c55e; }
+.m-tri-svg .k-side { fill: #5d6773; stroke: #2b3540; stroke-width: 2; }
+.m-tri-svg .k-knurl { stroke: rgba(255,255,255,.22); stroke-width: 2; fill: none; }
+.m-tri-svg .k-top { fill: #7a8694; stroke: #2b3540; stroke-width: 2; }
+.m-tri-svg .k-hub { fill: #39434f; }
+.m-tri-svg .k-tick { stroke: #e8edf2; stroke-width: 2.4; stroke-linecap: round; }
+.m-tri-svg .k-label { fill: #f2b705; font: 800 11px var(--font-ui); text-anchor: middle; }
+.m-tri-svg .m-knob { cursor: grab; }
+.m-tri-svg .m-knob.hold .k-top { fill: #93a0ae; }
+.m-tri-svg .m-knob.hold .k-side { fill: #6b7683; }
+.m-tri-hint { text-align: center; font: 600 12px var(--font-ui); color: var(--ink-soft); margin-top: -2px; }
+.m-tribrach .m-pip { touch-action: none; }
+.m-tribrach figcaption small { display: block; font: 500 11px var(--font-ui); color: var(--ink-soft); }
+.m-tribrach figcaption b.ok { color: #15803d; }
+.m-tribrach .m-pip .mark.ok, .m-tribrach .m-pip .bubble.ok { stroke: #15803d; }
