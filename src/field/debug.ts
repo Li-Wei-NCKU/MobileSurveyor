@@ -68,6 +68,10 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         <button data-a="site-gnss">第一天：直接到現場</button>
       </div>
       <div class="kd-row">
+        <button data-a="shelf0">平視器材架：左</button>
+        <button data-a="shelf1">平視器材架：右</button>
+      </div>
+      <div class="kd-row">
         <button data-a="go-level">第二天：從頭</button>
         <button data-a="site-level">第二天：直接到現場</button>
       </div>
@@ -200,6 +204,12 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         saveProgress({ day1Done: false, day2Done: false, day3Done: false, uncle: '', dog: '', kids: '' });
         msg('進度已清除。');
         return;
+      case 'shelf0': case 'shelf1': {
+        const sv = (window as AnyObj).__shelfView;
+        if (!sv) { msg('平視器材架是手機版的介面。'); return; }
+        if (!inField) { msg('要先進入外業場景。'); return; }
+        close(); sv(Number(a.slice(5))); return;
+      }
       case 'go-gnss': case 'go-level': case 'go-gcp':
         close(); start(app, field, a.slice(3) as JobId, false); return;
       case 'site-gnss': case 'site-level': case 'site-gcp':

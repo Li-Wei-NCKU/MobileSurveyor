@@ -10,7 +10,7 @@ export const TRUCK_HOME = { x: -150, z: 63.5, heading: Math.PI / 2 };
 export const SITE_PARK = { x: -9.5, z: 12, r: 6.5 };
 export const CKSV = { x: 0, z: 0 };
 
-export interface ShelfSpot { item: ItemId | null; pos: THREE.Vector3; rotY: number }
+export interface ShelfSpot { item: ItemId | null; pos: THREE.Vector3; rotY: number; rack: number; level: number; col: number }
 
 export function buildYard(sm: SceneManager): { group: THREE.Group; spots: ShelfSpot[]; boards: THREE.Object3D[]; colliders: { x: number; z: number; r: number }[]; roof: THREE.Object3D; walls: THREE.Mesh[] } {
   const S = SM();
@@ -80,12 +80,12 @@ export function buildYard(sm: SceneManager): { group: THREE.Group; spots: ShelfS
     { cx: 2.4, items: [['prism', 'hammer'], ['plate', 'cones', null], ['rtk', 'template', null]] },
   ];
   const rz = SZ1 - 0.55;
-  racks.forEach(rk => {
+  racks.forEach((rk, ri) => {
     const len = 4.4, dep = 0.7;
     [-len / 2, len / 2].forEach(dx => [-dep / 2, dep / 2].forEach(dz => g.add(S.mk(new THREE.BoxGeometry(0.06, 2.1, 0.06), rackMat, rk.cx + dx, 1.05, rz + dz))));
     levels.forEach((ly, li) => {
       const board = S.mk(new THREE.BoxGeometry(len, 0.04, dep), boardMat, rk.cx, ly, rz);
-      board.userData = { type: 'shelf' };
+      board.userData = { type: 'shelf', rack: ri, level: li, wx: YARD.x + rk.cx, wy: y0 + ly, wz: YARD.z + rz };
       g.add(board);
       boards.push(board);
       g.add(S.mk(new THREE.BoxGeometry(len, 0.08, 0.05), rackMat, rk.cx, ly - 0.02, rz - dep / 2));
@@ -93,7 +93,7 @@ export function buildYard(sm: SceneManager): { group: THREE.Group; spots: ShelfS
       row.forEach((it, i) => {
         const x = rk.cx - len / 2 + (len / row.length) * (i + 0.5);
         const wpos = new THREE.Vector3(YARD.x + x, y0 + ly + 0.02, YARD.z + rz);
-        spots.push({ item: it, pos: wpos, rotY: 0 });
+        spots.push({ item: it, pos: wpos, rotY: 0, rack: ri, level: li, col: i });
       });
     });
   });

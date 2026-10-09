@@ -12,6 +12,9 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
 export class TouchInput {
   private down: { x: number; y: number; t: number; id: number } | null = null;
+  /** 兩指捏合縮放 */
+  private pts = new Map<number, { x: number; y: number }>();
+  private pinch: { spread: number; dist: number } | null = null;
   private marker: THREE.Mesh;
   private markerT = 0;
   private chip: HTMLElement;
@@ -20,14 +23,26 @@ export class TouchInput {
   constructor(private app: GameApp, private player: MobilePlayer, private cam: FollowCamera) {
     const canvas = app.sceneManager.renderer.domElement as HTMLCanvasElement;
     canvas.style.touchAction = 'none';
-    canvas.addEventListener('pointerdown', (e) => { if (e.isPrimary) this.down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId }; });
-    canvas.addEventListener('pointerup', (e) => {
+    canvas.addEventListener('pointerdown', (e) => {
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pts.size > 1) { this.down = null; this.startPinch(); return; }
+      if (e.isPrimary) this.down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.pts.has(e.pointerId)) return;
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pts.size >= 2) this.zoom();
+    });
+    const up = (e: PointerEvent) => {
+      this.pts.delete(e.pointerId);
+      if (this.pts.size < 2) this.pinch = null;
       const d = this.down; this.down = null;
       if (!d || d.id !== e.pointerId) return;
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 14 || performance.now() - d.t > 600) return;
       this.tap(e.clientX, e.clientY);
-    });
-    canvas.addEventListener('pointercancel', () => { this.down = null; });
+    };
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', (e) => { this.pts.delete(e.pointerId); this.pinch = null; this.down = null; });
     // 落點標記
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.34, 32), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9, depthTest: false }));
     this.marker.rotation.x = -Math.PI / 2;
@@ -37,6 +52,22 @@ export class TouchInput {
     this.chip = document.createElement('div');
     this.chip.className = 'm-walkchip';
     document.body.appendChild(this.chip);
+  }
+
+  /** 兩指之間的距離 */
+  private spread() {
+    const p = [...this.pts.values()];
+    return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  }
+  private startPinch() {
+    if (this.pts.size < 2) return;
+    this.pinch = { spread: Math.max(20, this.spread()), dist: this.cam.dist };
+  }
+  /** 撐開 = 拉近 (距離變小)，收合 = 拉遠 */
+  private zoom() {
+    if (!this.pinch) { this.startPinch(); return; }
+    const k = Math.max(20, this.spread()) / this.pinch.spread;
+    this.cam.setDist(this.pinch.dist / k);
   }
 
   /** 每幀：落點標記縮小消失、前往提示 */

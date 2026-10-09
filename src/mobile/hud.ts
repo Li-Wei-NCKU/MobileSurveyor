@@ -4,8 +4,10 @@
  *  - 底：情境動作列 (放下 / 喝水 / 上車 …)，每 0.2 s 依狀態重算
  *  - 動作列的按鍵用合成 KeyboardEvent 丟給原本的 fieldDay.onKey，邏輯不重寫
  */
+import * as THREE from 'three';
 import type { GameApp, AnyObj } from '../field/legacy';
 import type { FieldDay } from '../field/fieldDay';
+import type { FollowCamera } from './camera';
 import { openAudioPanel } from '../field/sound';
 import { sheet, closeSheet } from './sheet';
 import { quickSaveMenu } from './quicksave';
@@ -18,10 +20,14 @@ export class MobileHud {
   private top: HTMLElement;
   private hint: HTMLElement;
   private bar: HTMLElement;
+  private dial: HTMLElement;
+  private dir = new THREE.Vector3();
   private t = 0;
   private sig = '';
   /** 其他模組 (開車) 要接管動作列時設定 */
   override: Act[] | null = null;
+  /** 指北針點下去可以調鏡頭遠近 */
+  cam: FollowCamera | null = null;
 
   constructor(private app: GameApp, private field: FieldDay) {
     this.root = document.createElement('div');
@@ -30,6 +36,7 @@ export class MobileHud {
       <div class="m-top">
         <button type="button" class="m-hint"><span class="m-hint-no"></span><span class="m-hint-text">…</span></button>
         <div class="m-top-btns">
+          <div class="m-compass" aria-label="指北針"><div class="m-compass-dial"><b class="n">北</b><b class="e">東</b><b class="s">南</b><b class="w">西</b></div><i></i></div>
           <button type="button" data-a="book" aria-label="外業手簿">📒</button>
           <button type="button" data-a="save" aria-label="存檔">💾</button>
           <button type="button" data-a="audio" aria-label="聲音">🔊</button>
@@ -40,6 +47,8 @@ export class MobileHud {
     this.top = this.root.querySelector('.m-top') as HTMLElement;
     this.hint = this.root.querySelector('.m-hint') as HTMLElement;
     this.bar = this.root.querySelector('.m-bar') as HTMLElement;
+    this.dial = this.root.querySelector('.m-compass-dial') as HTMLElement;
+    (this.root.querySelector('.m-compass') as HTMLElement).onclick = (e) => { e.stopPropagation(); this.zoomPanel(); };
     this.hint.onclick = () => this.openBook();
     this.root.querySelectorAll<HTMLButtonElement>('.m-top-btns button').forEach(b => {
       b.onclick = (e) => {
@@ -50,6 +59,24 @@ export class MobileHud {
         else if (a === 'audio') openAudioPanel();
       };
     });
+  }
+
+  /** 鏡頭遠近：拉桿或兩指捏合 */
+  zoomPanel() {
+    const cam = this.cam;
+    if (!cam) return;
+    const el = sheet('鏡頭遠近', `
+      <div class="m-zoom">
+        <div class="m-zoom-row"><span>遠</span><input type="range" min="9" max="32" step="0.5" value="${cam.dist}"><span>近</span></div>
+        <div class="m-zoom-val"><b>${cam.dist.toFixed(0)}</b> m</div>
+        <p class="m-tip">在畫面上用兩指撐開／收合也可以縮放，設定會記住。</p>
+      </div>`, 'm-zoom-sheet');
+    const r = el.querySelector('input') as HTMLInputElement;
+    const v = el.querySelector('.m-zoom-val b') as HTMLElement;
+    // 拉桿往右 = 拉近，所以用 min+max−value
+    const flip = (n: number) => 41 - n;
+    r.value = String(flip(cam.dist));
+    r.oninput = () => { const d = flip(Number(r.value)); cam.setDist(d); v.textContent = d.toFixed(0); };
   }
 
   /** 外業手簿 (任務清單) 用 sheet 顯示 */
@@ -66,8 +93,19 @@ export class MobileHud {
     window.dispatchEvent(e);
   }
 
+  /** 指北針：轉盤跟著鏡頭轉，北 = 世界 −Z */
+  private compass() {
+    const cam = this.app.sceneManager.camera as THREE.PerspectiveCamera;
+    cam.getWorldDirection(this.dir);
+    const fx = this.dir.x, fz = this.dir.z;
+    if (!fx && !fz) return;
+    const deg = Math.atan2(-fx, -fz) * 180 / Math.PI;
+    this.dial.style.setProperty('--r', `${deg.toFixed(1)}deg`);
+  }
+
   /** 每幀 */
   update(dt: number) {
+    this.compass();
     this.t += dt;
     if (this.t < 0.2) return;
     this.t = 0;

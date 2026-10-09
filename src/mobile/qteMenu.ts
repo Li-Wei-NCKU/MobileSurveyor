@@ -45,16 +45,24 @@ export function runQTE(o: QteOpts) {
     <div class="qte-line"></div>
     <div class="m-qte-timer"><i></i></div>
     <div class="m-qte-opts"></div>
+    <div class="m-qte-verdict"></div>
     <div class="qte-dots">${o.lines.map(() => '<i></i>').join('')}</div>
     <div class="qte-hint">${o.hint || '限時選一個回應。'}</div>`;
   document.body.appendChild(root);
   const lineEl = root.querySelector('.qte-line') as HTMLElement;
   const bar = root.querySelector('.m-qte-timer i') as HTMLElement;
   const optsEl = root.querySelector('.m-qte-opts') as HTMLElement;
+  const verdictEl = root.querySelector('.m-qte-verdict') as HTMLElement;
   const dots = [...root.querySelectorAll('.qte-dots i')] as HTMLElement[];
   const pool = o.responses || { good: KID_GOOD, bad: KID_BAD };
   const usedGood = new Set<number>();
-  let round = 0, t0 = 0, limit = 4, raf = 0, done = false;
+  let round = 0, t0 = 0, limit = 4, raf = 0, done = false, picking = false;
+
+  /** 選完之後把判定寫在選項下面，讓玩家知道自己選對還選錯 */
+  const verdict = (ok: boolean, text: string) => {
+    verdictEl.textContent = text;
+    verdictEl.className = `m-qte-verdict show ${ok ? 'good' : 'bad'}`;
+  };
 
   const finish = (ok: boolean) => {
     if (done) return;
@@ -74,14 +82,16 @@ export function runQTE(o: QteOpts) {
     return idx.slice(0, n).map(i => ({ v: arr[i], i }));
   };
 
+  let choices: { t: string; ok: boolean }[] = [];
   const next = () => {
     if (round >= o.lines.length) { finish(true); return; }
     lineEl.textContent = o.lines[round];
     const good = pick(pool.good, 1, usedGood)[0] || pick(pool.good, 1)[0];
     usedGood.add(good.i);
     const bads = pick(pool.bad, 2);
-    const choices = [{ t: good.v, ok: true }, ...bads.map(b => ({ t: b.v, ok: false }))].sort(() => Math.random() - 0.5);
+    choices = [{ t: good.v, ok: true }, ...bads.map(b => ({ t: b.v, ok: false }))].sort(() => Math.random() - 0.5);
     optsEl.innerHTML = '';
+    verdictEl.className = 'm-qte-verdict';
     choices.forEach(c => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -89,15 +99,25 @@ export function runQTE(o: QteOpts) {
       b.textContent = c.t;
       b.onclick = (e) => {
         e.stopPropagation();
-        if (done) return;
+        if (done || picking) return;
+        picking = true;
+        cancelAnimationFrame(raf);
+        const btns = [...optsEl.children] as HTMLElement[];
+        btns.forEach(el => ((el as HTMLButtonElement).disabled = true));
         if (c.ok) {
+          b.classList.add('right');
+          btns.forEach(el => { if (el !== b) el.classList.add('fade'); });
           dots[round]?.classList.add('ok');
+          verdict(true, '✓ 這句有用，他們聽進去了');
           o.onStep?.(round);
-          round++;
-          next();
+          setTimeout(() => { picking = false; round++; next(); tick(); }, 650);
         } else {
+          b.classList.add('wrong');
+          // 把正確答案標出來，不然玩家不知道自己選錯在哪
+          btns.forEach((el, i) => { if (choices[i].ok) el.classList.add('right'); else if (el !== b) el.classList.add('fade'); });
           dots[round]?.classList.add('bad');
-          finish(false);
+          verdict(false, '✗ 選錯了——這句話沒用，打勾的那句才行');
+          setTimeout(() => finish(false), 1500);
         }
       };
       optsEl.appendChild(b);
@@ -107,11 +127,18 @@ export function runQTE(o: QteOpts) {
   };
 
   const tick = () => {
-    if (done) return;
+    if (done || picking) return;
     const k = (performance.now() - t0) / 1000 / limit;
     bar.style.width = `${Math.max(0, 100 - k * 100)}%`;
     bar.classList.toggle('late', k > 0.65);
-    if (k >= 1) { dots[round]?.classList.add('bad'); finish(false); return; }
+    if (k >= 1) {
+      dots[round]?.classList.add('bad');
+      [...optsEl.children].forEach((el, i) => { if (choices[i]?.ok) el.classList.add('right'); else el.classList.add('fade'); (el as HTMLButtonElement).disabled = true; });
+      verdict(false, '✗ 來不及回答——打勾的那句才行');
+      picking = true;
+      setTimeout(() => { picking = false; finish(false); }, 1500);
+      return;
+    }
     raf = requestAnimationFrame(tick);
   };
 

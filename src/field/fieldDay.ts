@@ -729,6 +729,62 @@ export class FieldDay {
   /** 這件地上的設備是不是放在公司貨架上 */
   private onShelf(uid: number) { return this.shelfSpots.some(s => s.uid === uid); }
 
+  // ---------- 手機版「平視器材架」介面用 ----------
+  /** 這格現在放的是什麼 (可能被玩家換過位置) */
+  private spotItem(uid: number | null): ItemId | null {
+    if (uid == null) return null;
+    return this.ground.find(g => g.uid === uid)?.item ?? null;
+  }
+  /** 某座貨架的格位狀態；level 0 = 最下層 */
+  shelfLayout(rack: number) {
+    return this.shelfSpots
+      .map((s, i) => ({ i, rack: s.rack, level: s.level, col: s.col, item: this.spotItem(s.uid), home: s.item }))
+      .filter(s => s.rack === rack);
+  }
+  /** 貨架座標 (世界)：給相機平視與走過去用 */
+  rackInfo(rack: number): { x: number; y: number; z: number } | null {
+    const b = this.shelfBoards.find(o => o.userData?.rack === rack && o.userData?.level === 1);
+    if (!b) return null;
+    const ud = b.userData;
+    return { x: ud.wx, y: ud.wy, z: ud.wz };
+  }
+  get rackCount() { return this.shelfBoards.reduce((n, b) => Math.max(n, (b.userData?.rack ?? 0) + 1), 0); }
+  /** 從某格拿起設備 */
+  shelfTake(i: number): boolean {
+    const sp = this.shelfSpots[i];
+    if (!sp || sp.uid == null) return false;
+    if (this.carrying) { ui.toast('一次只能拿一件，先放下。', 'warn'); sfx.error(); return false; }
+    this.pickGround(sp.uid);
+    return true;
+  }
+  /** 把手上的設備放進指定的空格 */
+  shelfPut(i: number): boolean {
+    const sp = this.shelfSpots[i];
+    const it = this.carrying;
+    if (!sp || sp.uid != null || !it) return false;
+    if (this.held) this.handAnchor().remove(this.held);
+    this.held = null;
+    this.carrying = null;
+    this.handPoseReset();
+    sp.uid = this.spawnGround(it, sp.pos, sp.rotY);
+    sfx.thud();
+    ui.toast(`${ITEMS[it].name}放回架上${sp.item === it ? '（原位）' : ''}`, 'good', 1600);
+    this.promoteExtra();
+    return true;
+  }
+  /** 手機版：點架子 → 開平視介面 (桌機沒掛就回 false，照舊邏輯走) */
+  private openShelfUI(rack: number): boolean {
+    const fn = (window as AnyObj).__shelfView;
+    if (typeof fn !== 'function') return false;
+    fn(rack);
+    return true;
+  }
+  /** 這件地上的設備放在哪座架子 */
+  private shelfRackOf(uid: number): number {
+    const sp = this.shelfSpots.find(s => s.uid === uid);
+    return sp ? sp.rack : -1;
+  }
+
   /** 把手上的設備放回貨架：優先放回它原本的位置，否則放在離準心最近的空位 */
   private shelve(aim?: THREE.Vector3) {
     const it = this.carrying;
@@ -998,9 +1054,11 @@ export class FieldDay {
     const carryName = this.carrying ? ITEMS[this.carrying].name : '';
     switch (ud.type) {
       case 'field_item':
+        if (this.onShelf(ud.uid) && (window as AnyObj).__shelfView) return this.carrying ? `把${carryName}放上架子` : '看器材架';
         if (this.carrying && this.onShelf(ud.uid)) return `把${carryName}放回架上`;
         return this.carrying ? `手上已拿著${carryName}（先放下）` : `拿起 ${ITEMS[ud.item as ItemId].name}`;
       case 'shelf':
+        if ((window as AnyObj).__shelfView) return this.carrying ? `把${carryName}放上架子` : '看器材架';
         return this.carrying ? `把${carryName}放回架上` : null;
       case 'truck':
         return this.carrying ? `把${carryName}放上後斗` : '上車駕駛';
@@ -1034,9 +1092,14 @@ export class FieldDay {
     }
     switch (ud.type) {
       case 'shelf':
+        if (this.openShelfUI(ud.rack ?? 0)) return;
         if (this.carrying) this.shelve(this.app.player.raycaster?.intersectObject?.(obj)?.[0]?.point);
         return;
       case 'field_item':
+        if (this.onShelf(ud.uid)) {
+          const rk = this.shelfRackOf(ud.uid);
+          if (rk >= 0 && this.openShelfUI(rk)) return;
+        }
         if (this.carrying && this.onShelf(ud.uid)) { this.shelve(obj.position); return; }
         if (this.carrying) { ui.toast('一次只能拿一件，先放下，或點貨架放回去。', 'warn'); sfx.error(); return; }
         this.pickGround(ud.uid);

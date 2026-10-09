@@ -16,6 +16,7 @@ import { TouchInput } from './input';
 import { MobileHud } from './hud';
 import { DriveTouch } from './driveTouch';
 import { benchMenu } from './benchMenu';
+import { installShelfView } from './shelfView';
 import { installMobileDebug } from './debugMobile';
 import { applyGfx } from './gfx';
 
@@ -36,7 +37,9 @@ import { applyGfx } from './gfx';
   cam.setOccluders(field.yardOccluders());
   const input = new TouchInput(app, player, cam);
   const hud = new MobileHud(app, field);
+  hud.cam = cam;
   const drive = new DriveTouch(app, field, player, hud);
+  installShelfView(app, field, cam, player);
 
   // 對話時：人偶轉向對方、相機把兩人框進來
   setFaceHook((o) => {
@@ -67,7 +70,7 @@ import { applyGfx } from './gfx';
   const origUpdate = field.update.bind(field);
   field.update = (dt: number) => {
     origUpdate(dt);
-    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done';
+    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack;
     input.update(dt);
     hud.update(dt);
     drive.update(dt);
