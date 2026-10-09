@@ -738,6 +738,24 @@ export class FieldDay {
     const door = () => { const t = this.truck.toWorld(0.95, 0, 2.1); return { x: t.x, z: t.z, obj: this.truck.cabHit as THREE.Object3D }; };
     const find = (f: (o: THREE.Object3D) => boolean) => this.app.sceneManager.interactiveObjects.find(f);
 
+    // 東西忘在公司：指引開車回去拿 (m.forgot 是遊戲自己記下來的)
+    if (['site', 'observe'].includes(this.phase) && this.m.forgot.size) {
+      const S = this.J.site;
+      const here = (it: ItemId) => this.carrying === it || this.extraCarry === it || this.grid.has(it)
+        || this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
+      const want = [...this.m.forgot].find(it => !here(it));
+      const pp = this.app.player.position;
+      const atYard = Math.hypot(pp.x - YARD.x, pp.z - YARD.z) < 32;
+      if (want) {
+        if (atYard) {
+          const g = this.ground.find(x => x.item === want);
+          if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `拿${nm(want)}（剛剛忘了帶）`, reach: 1.1, obj: g.obj };
+        }
+        return { ...door(), label: `開車回公司拿${nm(want)}`, reach: 1.3 };
+      }
+      if (atYard) return { ...door(), label: '東西拿到了，開車回現場', reach: 1.3 };
+    }
+
     if (this.phase === 'prep') {
       if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
       // 還沒裝車的必帶設備：指到它現在放的架子

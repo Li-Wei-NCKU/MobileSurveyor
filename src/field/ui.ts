@@ -217,6 +217,9 @@ export interface TrunkViewOpts {
 }
 
 export function showTrunkView(o: TrunkViewOpts) {
+  // 手機版有自己的後斗畫面 (格子大、有插畫、會指出卡住的是哪幾件)
+  const mv = (window as AnyObj).__trunkView;
+  if (typeof mv === 'function') { mv(o); return; }
   const { grid } = o;
   const loading = !!o.item;
   const item = o.item as ItemId;
