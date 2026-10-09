@@ -549,7 +549,8 @@ export class FieldDay {
 
     // HUD
     if (this.inTruck) {
-      ui.setHud({ speedKmh: Math.abs(this.truck.speed) * 3.6, dest: this.destText() });
+      // 手機版：開車時只留時速 (導航列已經在左上角了)
+      ui.setHud({ speedKmh: Math.abs(this.truck.speed) * 3.6, dest: (window as AnyObj).__mobile ? null : this.destText() });
     } else {
       ui.setHud({ holding: this.carrying ? ITEMS[this.carrying].name + (this.extraCarry ? `＋${ITEMS[this.extraCarry].name}` : '') : null, dest: ['toSite', 'return'].includes(this.phase) ? this.destText() : this.sub ? this.sub.destText() : null, water: this.water });
     }

@@ -100,6 +100,14 @@ import { applyGfx } from './gfx';
     player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack && !document.body.classList.contains('scope-active');
     input.update(dt);
     guide.update(dt);
+    // 靠近正在架的儀器就把鏡頭拉近
+    {
+      const p = player.position;
+      const gl = app.levelsMap.gnss as AnyObj;
+      const lv = (field as AnyObj).lv as AnyObj | undefined;
+      const near = [gl?.tripodMesh, lv?.inst].find((o: AnyObj) => o && o.position && Math.hypot(o.position.x - p.x, o.position.z - p.z) < 3.4) as AnyObj | undefined;
+      cam.closeUp = near ? { x: near.position.x, z: near.position.z } : null;
+    }
     uavPad();
     // 進器材室時自動翻開一次備料清單 (玩家不會知道 GNSS 要帶什麼)
     if (!noteShown && field.phase === 'prep' && !player.isModalOpen() && app.currentLevelObj === field) { noteShown = true; openNote(field); }

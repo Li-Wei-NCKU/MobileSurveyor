@@ -45,24 +45,17 @@ export function runQTE(o: QteOpts) {
     <div class="qte-line"></div>
     <div class="m-qte-timer"><i></i></div>
     <div class="m-qte-opts"></div>
-    <div class="m-qte-verdict"></div>
     <div class="qte-dots">${o.lines.map(() => '<i></i>').join('')}</div>
     <div class="qte-hint">${o.hint || '限時選一個回應。'}</div>`;
   document.body.appendChild(root);
   const lineEl = root.querySelector('.qte-line') as HTMLElement;
   const bar = root.querySelector('.m-qte-timer i') as HTMLElement;
   const optsEl = root.querySelector('.m-qte-opts') as HTMLElement;
-  const verdictEl = root.querySelector('.m-qte-verdict') as HTMLElement;
   const dots = [...root.querySelectorAll('.qte-dots i')] as HTMLElement[];
   const pool = o.responses || { good: KID_GOOD, bad: KID_BAD };
   const usedGood = new Set<number>();
   let round = 0, t0 = 0, limit = 4, raf = 0, done = false, picking = false;
 
-  /** 選完之後把判定寫在選項下面，讓玩家知道自己選對還選錯 */
-  const verdict = (ok: boolean, text: string) => {
-    verdictEl.textContent = text;
-    verdictEl.className = `m-qte-verdict show ${ok ? 'good' : 'bad'}`;
-  };
 
   const finish = (ok: boolean) => {
     if (done) return;
@@ -91,7 +84,6 @@ export function runQTE(o: QteOpts) {
     const bads = pick(pool.bad, 2);
     choices = [{ t: good.v, ok: true }, ...bads.map(b => ({ t: b.v, ok: false }))].sort(() => Math.random() - 0.5);
     optsEl.innerHTML = '';
-    verdictEl.className = 'm-qte-verdict';
     choices.forEach(c => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -108,7 +100,6 @@ export function runQTE(o: QteOpts) {
           b.classList.add('right');
           btns.forEach(el => { if (el !== b) el.classList.add('fade'); });
           dots[round]?.classList.add('ok');
-          verdict(true, '✓ 這句有用，他們聽進去了');
           o.onStep?.(round);
           setTimeout(() => { picking = false; round++; next(); tick(); }, 650);
         } else {
@@ -116,7 +107,6 @@ export function runQTE(o: QteOpts) {
           // 把正確答案標出來，不然玩家不知道自己選錯在哪
           btns.forEach((el, i) => { if (choices[i].ok) el.classList.add('right'); else if (el !== b) el.classList.add('fade'); });
           dots[round]?.classList.add('bad');
-          verdict(false, '✗ 選錯了——這句話沒用，打勾的那句才行');
           setTimeout(() => finish(false), 1500);
         }
       };
@@ -134,7 +124,6 @@ export function runQTE(o: QteOpts) {
     if (k >= 1) {
       dots[round]?.classList.add('bad');
       [...optsEl.children].forEach((el, i) => { if (choices[i]?.ok) el.classList.add('right'); else el.classList.add('fade'); (el as HTMLButtonElement).disabled = true; });
-      verdict(false, '✗ 來不及回答——打勾的那句才行');
       picking = true;
       setTimeout(() => { picking = false; finish(false); }, 1500);
       return;

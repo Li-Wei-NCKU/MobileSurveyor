@@ -1,5 +1,5 @@
 /**
- * 開車觸控：左下方向盤滑桿 (放手回正)、右下油門 / 煞車倒車 / 手煞車、下車、收音機。
+ * 開車觸控：左下方向盤滑桿 (放手回正)、右下油門 / 煞車倒車、下車、收音機。
  * 車輛物理、碰撞、喇叭、路中停車計分都在 fieldDay.driveTick / truck.ts，沒有改。
  */
 import type { GameApp, AnyObj } from '../field/legacy';
@@ -27,7 +27,6 @@ export class DriveTouch {
       </div>
       <div class="m-drive-top">
         <button type="button" class="m-dbtn" data-a="exit">下車</button>
-        <button type="button" class="m-dbtn" data-a="hand">手煞車</button>
         <button type="button" class="m-dbtn" data-a="radio">收音機</button>
       </div>`;
     document.body.appendChild(this.root);
@@ -53,8 +52,6 @@ export class DriveTouch {
     };
     hold(this.root.querySelector('.m-gas') as HTMLElement, () => { ax.throttle = 1; }, () => { if (ax.throttle > 0) ax.throttle = 0; });
     hold(this.root.querySelector('.m-brake') as HTMLElement, () => { ax.throttle = -1; }, () => { if (ax.throttle < 0) ax.throttle = 0; });
-    const hb = this.root.querySelector('[data-a=hand]') as HTMLElement;
-    hold(hb, () => { ax.brake = true; }, () => { ax.brake = false; });
     (this.root.querySelector('[data-a=exit]') as HTMLButtonElement).onclick = () => { closeSheet(); (this.app.currentLevelObj as AnyObj).onFreeInteract?.(); };
     (this.root.querySelector('[data-a=radio]') as HTMLButtonElement).onclick = () => this.radioSheet();
   }

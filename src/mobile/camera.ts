@@ -19,6 +19,9 @@ export class FollowCamera {
   fov = 36;
   /** 對話取景：目標點移到兩人中間 */
   focus: { x: number; z: number } | null = null;
+  /** 靠近儀器時自動拉近，並把儀器一起框進來 (null = 不拉近) */
+  closeUp: { x: number; z: number } | null = null;
+  private closeK = 0;
   /** 平視器材架：鏡頭滑到貨架正前方、接近水平 */
   rack: { x: number; y: number; z: number } | null = null;
   private rackBlend = 0;
@@ -31,6 +34,7 @@ export class FollowCamera {
   private faded = new Set<THREE.Mesh>();
   private origMat = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private tmpCam = new THREE.PerspectiveCamera();
+  private hidLabels: THREE.Object3D[] = [];
 
   constructor(private app: GameApp, private player: MobilePlayer) {
     try {
@@ -71,15 +75,25 @@ export class FollowCamera {
     const foot = p.position.y - 1.65;
     // 目標點放在玩家前方一點 (南)，畫面下方留給動作列
     let tx = p.position.x, tz = p.position.z + 1.0, ty = foot + 1.0;
-    let dist = this.dist, fov = this.fov;
+    // 架儀器時鏡頭靠近一點、角度放低一點
+    this.closeK += ((this.closeUp ? 1 : 0) - this.closeK) * Math.min(1, (1 / 60) * 3);
+    if (this.closeK < 0.002) this.closeK = 0;
+    let dist = this.dist * (1 - 0.56 * this.closeK), fov = this.fov;
     if (this.focus) { tx = (tx + this.focus.x) / 2; tz = (tz + this.focus.z) / 2; ty = foot + 1.1; dist = this.dist * 0.8; fov = 26; }
+    else if (this.closeK > 0 && this.closeUp) {
+      // 把玩家和儀器一起框進來
+      tx += ((this.closeUp.x + p.position.x) / 2 - tx) * this.closeK;
+      tz += ((this.closeUp.z + p.position.z) / 2 + 0.4 - tz) * this.closeK;
+      ty = foot + 1.0 + 0.25 * this.closeK;
+    }
     // 直式畫面：垂直視野要算進長寬比，讓畫面裡看到的範圍差不多
     const portrait = innerHeight > innerWidth;
     if (portrait) fov = Math.min(70, fov * 1.7);
     const want = V(tx, ty, tz);
     if (!this.wasFollowing || this.look.distanceTo(want) > 15) { this.look.copy(want); this.wasFollowing = true; }
     else this.look.lerp(want, Math.min(1, dt * 6));
-    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const pitch = this.pitch - THREE.MathUtils.degToRad(14) * this.closeK;
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
     // 相機在目標北方 (−Z)、上方，面向南：器材室 (開口朝北) 和現場的路人都在畫面裡
     this.pos.set(this.look.x, this.look.y + dist * sp, this.look.z - dist * cp);
     const minY = (sm.heightAt?.(this.pos.x, this.pos.z) ?? 0) + 1.2;
@@ -108,6 +122,9 @@ export class FollowCamera {
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 8); cam.updateProjectionMatrix(); }
     cam.updateMatrixWorld();
     this.shed(this.inShed(p.position.x, p.position.z));
+    const fa = (sm.floatingArrows || []) as THREE.Object3D[];
+    if (this.closeK > 0.4) { fa.forEach(o => { if (o.visible) { this.hidLabels.push(o); o.visible = false; } }); }
+    else if (this.hidLabels.length) { this.hidLabels.forEach(o => { o.visible = true; }); this.hidLabels = []; }
     this.fadeTrees();
   }
 
