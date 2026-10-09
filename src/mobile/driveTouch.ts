@@ -84,7 +84,7 @@ export class DriveTouch {
         <button type="button" data-r="prev">上一台</button>
         <button type="button" data-r="next">下一台</button>
       </div>
-      <ol class="m-radio-list">${(radio.stations as AnyObj[]).map((st, i) => `<li><button type="button" data-i="${i}">${st.key ? `<kbd class="cap">${st.key}</kbd>` : ''}${st.name}${st.custom ? '<em>自訂</em>' : ''}</button><button type="button" class="m-radio-url" data-u="${i}">網址</button></li>`).join('')}</ol>`;
+      <ol class="m-radio-list">${(radio.stations as AnyObj[]).map((st, i) => `<li><button type="button" data-i="${i}">${st.name}${st.custom ? '<em>自訂</em>' : ''}</button><button type="button" class="m-radio-url" data-u="${i}">網址</button></li>`).join('')}</ol>`;
     const bd = sheet('車上收音機', html, 'm-radio');
     const now = bd.querySelector('.m-radio-now') as HTMLElement;
     const refresh = () => {

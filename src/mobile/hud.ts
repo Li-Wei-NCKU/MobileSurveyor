@@ -131,7 +131,7 @@ export class MobileHud {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = `m-act${a.accent ? ' accent' : ''}`;
-        b.innerHTML = `${a.key ? `<kbd class="cap">${a.key}</kbd>` : ''}<span>${a.text}</span>`;
+        b.innerHTML = `<span>${a.text}</span>`;
         b.onclick = (e) => { e.stopPropagation(); closeSheet(); a.on(); };
         this.bar.appendChild(b);
       });
@@ -142,12 +142,12 @@ export class MobileHud {
     const fd = this.field;
     const out: Act[] = [];
     if (fd.inTruck) return out; // 開車由 driveTouch 接管
-    if (fd.carrying) out.push({ id: 'drop', text: `放下${ITEMS[fd.carrying].name}`, key: 'G', on: () => this.key('KeyG') });
-    out.push({ id: 'drink', text: '喝水', key: 'F', on: () => this.key('KeyF') });
+    if (fd.carrying) out.push({ id: 'drop', text: `放下${ITEMS[fd.carrying].name}`, on: () => this.key('KeyG') });
+    // 喝水沒有常駐按鍵：點地上或後斗的礦泉水時才出現選項 (waterMenu / truckMenu)
     const sub = (fd as AnyObj).sub;
     if (sub) {
       // 第二、三天的額外動作：由各自的工作提供 (之後的里程碑)
-      const extra: Act[] = (sub.mobileActs?.() || []).map((a: AnyObj) => ({ id: a.id, text: a.text, key: a.key, on: () => this.key(a.code) }));
+      const extra: Act[] = (sub.mobileActs?.() || []).map((a: AnyObj) => ({ id: a.id, text: a.text, on: () => this.key(a.code) }));
       out.push(...extra);
     }
     const rp = (fd as AnyObj).events?.rescuePoint?.();

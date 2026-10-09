@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { GameApp, AnyObj } from '../field/legacy';
 import { FieldDay } from '../field/fieldDay';
-import { showMainMenu, setFaceHook } from '../field/ui';
+import { showMainMenu, setFaceHook, setTextFilter, fixText } from '../field/ui';
 import { JOBS, loadProgress, type JobId } from '../field/jobs';
 import { installDebug } from '../field/debug';
 import { installSaveLoad } from '../field/saveload';
@@ -17,6 +17,9 @@ import { MobileHud } from './hud';
 import { DriveTouch } from './driveTouch';
 import { benchMenu } from './benchMenu';
 import { installShelfView } from './shelfView';
+import { installTruckMenu } from './truckMenu';
+import { installWaterMenu } from './waterMenu';
+import { MobileGuide } from './guide';
 import { installMobileDebug } from './debugMobile';
 import { applyGfx } from './gfx';
 
@@ -40,6 +43,23 @@ import { applyGfx } from './gfx';
   hud.cam = cam;
   const drive = new DriveTouch(app, field, player, hud);
   installShelfView(app, field, cam, player);
+  installTruckMenu(app, field);
+  installWaterMenu(app, field);
+  const guide = new MobileGuide(app, field, player);
+
+  // 說明文字裡的鍵盤操作改寫成觸控說法
+  setTextFilter((t) => t
+    .replace(/對著([^，。）]{1,10})按\s*E/g, '點$1')
+    .replace(/看著([^，。）]{1,10})按\s*E/g, '點$1')
+    .replace(/按\s*E\s*鍵?/g, '點一下')
+    .replace(/按\s*G\s*鍵?/g, '用「放下」鍵')
+    .replace(/按\s*F\s*鍵?/g, '用「喝水」鍵')
+    .replace(/按\s*Q\s*鍵?/g, '點「外業地圖」')
+    .replace(/按\s*R\s*打開收音機[^。]*/g, '點右下角的收音機')
+    .replace(/WASD/g, '搖桿'));
+  const origPanel = app.updateMissionPanel.bind(app);
+  (app as AnyObj).updateMissionPanel = (title: string, tasks: AnyObj[], i: number, hint: string) =>
+    origPanel(title, tasks, i, typeof hint === 'string' ? (fixText(hint)) : hint);
 
   // 對話時：人偶轉向對方、相機把兩人框進來
   setFaceHook((o) => {
@@ -72,6 +92,7 @@ import { applyGfx } from './gfx';
     origUpdate(dt);
     player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack;
     input.update(dt);
+    guide.update(dt);
     hud.update(dt);
     drive.update(dt);
   };
@@ -94,7 +115,7 @@ import { applyGfx } from './gfx';
   installDebug(app, field, menu);
   installMobileDebug();
   installSaveLoad(app, field);
-  (window as AnyObj).__mobile = { player, cam, input, hud, drive, field };
+  (window as AnyObj).__mobile = { player, cam, input, hud, drive, field, guide };
 
   // 背景先載入 CKSV 場景當主選單背景
   app.loadLevel('gnss');

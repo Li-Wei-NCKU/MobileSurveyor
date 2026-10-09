@@ -28,7 +28,13 @@ function overlay(id: string, inner: HTMLElement): HTMLElement {
 // 提示條 (toast)
 // ------------------------------------------------------------------
 let toastBox: HTMLElement | null = null;
+/** 手機版把「按 E」之類的鍵盤說明改寫成觸控說法 (由 mobile/index.ts 設定) */
+let textFilter: ((s: string) => string) | null = null;
+export function setTextFilter(f: ((s: string) => string) | null) { textFilter = f; }
+export function fixText(s: string) { return textFilter && typeof s === 'string' ? textFilter(s) : s; }
+
 export function toast(text: string, kind: 'info' | 'warn' | 'bad' | 'good' = 'info', ms = 3200) {
+  text = fixText(text);
   if (!toastBox) {
     toastBox = el('div', 'toast-box');
     document.body.appendChild(toastBox);
@@ -139,6 +145,8 @@ export function faceSpeaker(o: unknown) { if (o && faceHook) faceHook(o); }
 
 export interface DialogOption { text: string; reply: string; score: number; tag: string; /** 有值時選項不可選，並顯示原因 */ disabled?: string; id?: string }
 export function showDialog(speaker: string, line: string, options: DialogOption[], onPick: (o: DialogOption) => void) {
+  line = fixText(line);
+  options = options.map(o => ({ ...o, text: fixText(o.text), disabled: o.disabled ? fixText(o.disabled) : o.disabled }));
   const box = el('div', 'dialog');
   box.innerHTML = `
     <div class="dialog-speaker">${speaker}</div>

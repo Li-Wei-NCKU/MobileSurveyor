@@ -41,7 +41,7 @@ body { touch-action: manipulation; }
 .m-act .cap { transform: scale(.85); }
 .m-act.accent { background: var(--survey-yellow); color: #111; border-color: #a07400; animation: m-pulse 1s ease-in-out infinite alternate; }
 @keyframes m-pulse { from { box-shadow: 0 4px 12px rgba(0,0,0,.35); } to { box-shadow: 0 0 0 6px rgba(233,179,8,.35); } }
-.m-walkchip { position: fixed; left: 50%; bottom: calc(var(--sab) + var(--m-bar-h) + 14px); transform: translateX(-50%); z-index: 41; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.92); color: #1f2d3d; font: 700 14px var(--font-ui); box-shadow: 0 4px 12px rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.m-walkchip { position: fixed; left: 12px; right: 12px; margin: 0 auto; width: fit-content; bottom: calc(var(--sab) + var(--m-bar-h) + 14px); z-index: 41; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.92); color: #1f2d3d; font: 700 14px var(--font-ui); box-shadow: 0 4px 12px rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .m-walkchip.show { opacity: 1; }
 .m-walkchip::before { content: '➜ '; color: #d97706; }
 
@@ -244,3 +244,23 @@ body:has(.m-cmd-backdrop) .m-bar, body:has(.dialog-backdrop) .m-bar { display: n
 .m-zoom-row input { flex: 1; height: 36px; accent-color: #1e5aa8; }
 .m-zoom-val { text-align: center; font: 600 13px var(--font-ui); color: var(--ink-soft); margin-top: 2px; }
 .m-zoom-val b { font: 900 20px var(--font-mono, monospace); color: var(--ink); }
+
+/* ---------- 任務指引 ---------- */
+.m-goal {
+  position: fixed; left: 12px; right: 12px; bottom: calc(var(--sab) + var(--m-bar-h) + 14px);
+  margin: 0 auto; width: fit-content; max-width: calc(100vw - 24px);
+  z-index: 41; display: none; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.35);
+  background: rgba(20,29,38,.88); color: #fff; font: 700 14px/1.2 var(--font-ui);
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); backdrop-filter: blur(8px); pointer-events: auto;
+}
+.m-goal.show { display: flex; }
+.m-goal:active { transform: translateY(2px); }
+.m-goal-dir { display: inline-block; font-style: normal; color: var(--survey-yellow, #f2b705); font-size: 16px; line-height: 1; }
+.m-goal-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-goal-dist { font: 800 13px var(--font-mono, monospace); color: #ffd23f; flex: none; }
+body.bench-active .m-goal, body.qte-active .m-goal { display: none !important; }
+body:has(.m-cmd-backdrop) .m-goal, body:has(.dialog-backdrop) .m-goal { display: none !important; }
+
+/* 手機版不顯示鍵盤鍵帽 */
+kbd.cap { display: none !important; }

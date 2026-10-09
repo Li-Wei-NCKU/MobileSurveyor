@@ -729,6 +729,72 @@ export class FieldDay {
   /** 這件地上的設備是不是放在公司貨架上 */
   private onShelf(uid: number) { return this.shelfSpots.some(s => s.uid === uid); }
 
+  // ---------- 手機版任務指引 ----------
+  /** 下一步要去哪、做什麼；手機版用來畫目標圈與「前往」提示 */
+  guideTarget(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
+    if (this.inTruck || this.phase === 'brief' || this.phase === 'done') return null;
+    const nm = (i: ItemId) => ITEMS[i].name;
+    const tail = () => { const t = this.truck.toWorld(-3.6, 0, 0); return { x: t.x, z: t.z, obj: this.truck.tailHit as THREE.Object3D }; };
+    const door = () => { const t = this.truck.toWorld(0.95, 0, 2.1); return { x: t.x, z: t.z, obj: this.truck.cabHit as THREE.Object3D }; };
+    const find = (f: (o: THREE.Object3D) => boolean) => this.app.sceneManager.interactiveObjects.find(f);
+
+    if (this.phase === 'prep') {
+      if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+      // 還沒裝車的必帶設備：指到它現在放的架子
+      for (const it of this.J.required) {
+        if (this.grid.has(it)) continue;
+        const g = this.ground.find(x => x.item === it);
+        if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `到器材架拿${nm(it)}`, reach: 1.1, obj: g.obj };
+      }
+      return { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
+    }
+    if (this.phase === 'toSite') return { ...door(), label: '上車出發', reach: 1.3 };
+    if (this.phase === 'return') {
+      if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+      return { ...door(), label: '上車開回公司', reach: 1.3 };
+    }
+    if (this.phase === 'packup') {
+      if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}搬上後斗`, reach: 1.4 };
+      const S = this.J.site;
+      const left = this.ground.filter(g => Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
+      if (left.length) {
+        const p = this.app.player.position;
+        const g = left.slice().sort((a, b) => a.obj.position.distanceToSquared(p) - b.obj.position.distanceToSquared(p))[0];
+        return { x: g.obj.position.x, z: g.obj.position.z, label: `搬回後斗：${nm(g.item)}`, reach: 1.3, obj: g.obj };
+      }
+      return { ...door(), label: '東西都收好了，上車回公司', reach: 1.3 };
+    }
+    // 現場：第一天 GNSS (第二、三天還沒改成觸控)
+    if (this.job === 'gnss' && (this.phase === 'site' || this.phase === 'observe')) {
+      const gnss = this.app.levelsMap.gnss;
+      const monObj = find(o => o.userData?.type === 'monument' && String(o.userData.label || '').includes('CKSV'));
+      const instObj = find(o => o.userData?.type === 'instrument' && o.userData.instrumentType === 'gnss');
+      const mon = { x: CKSV.x, z: CKSV.z, obj: instObj || monObj };
+      const fetch = (it: ItemId) => {
+        if (this.carrying === it) return null;
+        const g = this.ground.find(x => x.item === it);
+        if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: `拿起${nm(it)}`, reach: 1.3, obj: g.obj };
+        return { ...tail(), label: `從後斗拿${nm(it)}`, reach: 1.4 };
+      };
+      if (!this.tripodSet) return fetch('tripod') || { ...mon, label: '在 CKSV 控制點上架三腳架', reach: 1.6 };
+      if (!this.tribrachOn) return fetch('tribrach') || { ...mon, label: '把基座裝上腳架', reach: 1.6 };
+      if (!this.receiverOn) return fetch('gnss') || { ...mon, label: '裝上 GNSS 接收儀', reach: 1.6 };
+      if (gnss?.currentStep >= 2 && !this.toolbagOn) return fetch('toolbag') || { ...mon, label: '拿外業工具袋來量天線高', reach: 1.6 };
+      return { ...mon, label: '回到儀器旁繼續作業', reach: 1.6 };
+    }
+    return null;
+  }
+
+  /** 手機版：點貨車 → 問要上車還是看後斗 */
+  private openTruckUI(where: 'cab' | 'bed'): boolean {
+    const fn = (window as AnyObj).__truckMenu;
+    if (typeof fn !== 'function') return false;
+    fn(where);
+    return true;
+  }
+  /** 給手機版選單呼叫 */
+  mobileEnterTruck() { this.enterTruck(); }
+
   // ---------- 手機版「平視器材架」介面用 ----------
   /** 這格現在放的是什麼 (可能被玩家換過位置) */
   private spotItem(uid: number | null): ItemId | null {
@@ -811,6 +877,8 @@ export class FieldDay {
     this.ground.forEach(g => { sm.scene.remove(g.obj); this.unregister(g.obj); });
     this.ground = [];
   }
+
+  mobilePickGround(uid: number) { this.pickGround(uid); }
 
   private pickGround(uid: number) {
     const g = this.ground.find(x => x.uid === uid);
@@ -1054,6 +1122,7 @@ export class FieldDay {
     const carryName = this.carrying ? ITEMS[this.carrying].name : '';
     switch (ud.type) {
       case 'field_item':
+        if (ud.item === 'water' && !this.carrying && (window as AnyObj).__waterMenu) return '礦泉水（喝水／搬起來）';
         if (this.onShelf(ud.uid) && (window as AnyObj).__shelfView) return this.carrying ? `把${carryName}放上架子` : '看器材架';
         if (this.carrying && this.onShelf(ud.uid)) return `把${carryName}放回架上`;
         return this.carrying ? `手上已拿著${carryName}（先放下）` : `拿起 ${ITEMS[ud.item as ItemId].name}`;
@@ -1061,6 +1130,7 @@ export class FieldDay {
         if ((window as AnyObj).__shelfView) return this.carrying ? `把${carryName}放上架子` : '看器材架';
         return this.carrying ? `把${carryName}放回架上` : null;
       case 'truck':
+        if ((window as AnyObj).__truckMenu) return this.carrying ? `把${carryName}放上後斗` : '看貨車（上車／後斗）';
         return this.carrying ? `把${carryName}放上後斗` : '上車駕駛';
       case 'truck_bed':
       case 'trunk_item':
@@ -1096,6 +1166,7 @@ export class FieldDay {
         if (this.carrying) this.shelve(this.app.player.raycaster?.intersectObject?.(obj)?.[0]?.point);
         return;
       case 'field_item':
+        if (ud.item === 'water' && !this.carrying && (window as AnyObj).__waterMenu) { (window as AnyObj).__waterMenu(ud.uid); return; }
         if (this.onShelf(ud.uid)) {
           const rk = this.shelfRackOf(ud.uid);
           if (rk >= 0 && this.openShelfUI(rk)) return;
@@ -1105,10 +1176,12 @@ export class FieldDay {
         this.pickGround(ud.uid);
         return;
       case 'truck':
+        if (this.openTruckUI('cab')) return;
         if (this.carrying) this.openLoader(); else this.enterTruck();
         return;
       case 'truck_bed':
       case 'trunk_item':
+        if (this.openTruckUI('bed')) return;
         if (this.carrying) this.openLoader(); else this.openUnload();
         return;
     }
@@ -1221,7 +1294,7 @@ export class FieldDay {
     this.water = Math.max(0, this.water - rate * dt);
     if (this.water < 35 && !this.thirstWarned) {
       this.thirstWarned = true;
-      ui.toast('口好渴……靠近礦泉水喝水（後斗或地上的那箱）。', 'warn', 4500);
+      ui.toast('口好渴……去點那箱礦泉水（在後斗或地上）喝一瓶。', 'warn', 4500);
     }
     if (this.water > 50) this.thirstWarned = false;
     document.body.classList.toggle('thirsty', this.water <= 0.5);
@@ -1235,13 +1308,24 @@ export class FieldDay {
     ui.toast(`喝了${label}，水分 ${Math.round(this.water)}%`, 'good', 2000);
   }
 
+  /** 手機版：點礦泉水 / 點車尾選單用 */
+  mobileDrink() { this.drink(); }
+  get waterBottles() { return this.bottles; }
+  /** 附近有沒有水可以喝 */
+  canDrink() {
+    const p = this.app.player.position;
+    return this.carrying === 'water'
+      || this.ground.some(g => g.item === 'water' && Math.hypot(g.obj.position.x - p.x, g.obj.position.z - p.z) < 3)
+      || (this.grid.has('water') && (() => { const t = this.truck.toWorld(-2.6, 0, 0); return Math.hypot(t.x - p.x, t.z - p.z) < 3.5; })());
+  }
+
   /** F：喝水 (手上、附近地上、或站在車尾時後斗裡有礦泉水) */
   private drink() {
     const p = this.app.player.position;
     const near = this.carrying === 'water'
       || this.ground.some(g => g.item === 'water' && Math.hypot(g.obj.position.x - p.x, g.obj.position.z - p.z) < 3)
       || (this.grid.has('water') && (() => { const t = this.truck.toWorld(-2.6, 0, 0); return Math.hypot(t.x - p.x, t.z - p.z) < 3.5; })());
-    if (!near) { sfx.error(); ui.toast(this.grid.has('water') ? '礦泉水在後斗，走到車尾再喝。' : '附近沒有水……那箱礦泉水呢？', 'warn', 2600); return; }
+    if (!near) { sfx.error(); ui.toast(this.grid.has('water') ? '礦泉水在後斗，到車尾再喝。' : '附近沒有水……那箱礦泉水呢？', 'warn', 2600); return; }
     if (this.bottles <= 0) { ui.toast('礦泉水喝完了。', 'warn'); return; }
     if (this.water > 92) { ui.toast('還不渴。', 'info', 1400); return; }
     this.bottles--;
