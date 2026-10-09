@@ -66,6 +66,7 @@ export class MobileGuide {
     if (g && !this.told) {
       this.told = true;
       toast('畫面下方的指引會說下一步要去哪，點它就會自動走過去。', 'info', 5200);
+      setTimeout(() => toast('點左上角的任務提示，可以打開外業手簿看清單和進度。', 'info', 5200), 900);
     }
     // 正在走去某個地方時，交給走路提示 (m-walkchip)，兩個不要疊在一起
     const walking = !!this.player.target?.label;

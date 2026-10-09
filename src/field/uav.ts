@@ -265,6 +265,7 @@ export class UavOps {
   private openPlanner() {
     if (this.planEl) return;
     if (document.exitPointerLock) document.exitPointerLock();
+    const mob = !!(window as AnyObj).__mobile;
     const d = document.createElement('div');
     d.className = 'modal-backdrop show field-modal uav-plan';
     d.innerHTML = `<div class="up-pad">
@@ -272,7 +273,7 @@ export class UavOps {
       <div class="up-body">
         <canvas width="560" height="470"></canvas>
         <div class="up-side">
-          <p class="up-tip">在地圖上點一下就是一個航點，照順序連成航線（從起降點 H 出發，飛完自動回來）。<b>按住航點可以拖拉調整</b>；對著航點按右鍵刪掉那一點，Backspace 刪最後一個。</p>
+          <p class="up-tip">在地圖上點一下就是一個航點，照順序連成航線（從起降點 H 出發，飛完自動回來）。<b>按住航點可以拖拉調整</b>；${mob ? '長按航點就刪掉那一點，點「復原」刪最後一個' : '對著航點按右鍵刪掉那一點，Backspace 刪最後一個'}。</p>
           <div class="up-example">
             <svg viewBox="0 0 150 92" aria-hidden="true">
               <rect x="22" y="12" width="106" height="68" fill="none" stroke="#e11d48" stroke-dasharray="4 3" stroke-width="1.5"/>
@@ -294,8 +295,8 @@ export class UavOps {
           <div class="up-btns">
             <button data-a="undo">復原</button>
             <button data-a="clear">清除</button>
-            <button data-a="fly" class="up-fly">起飛 (Enter)</button>
-            <button data-a="close">先不要 (Esc)</button>
+            <button data-a="fly" class="up-fly">起飛${mob ? '' : ' (Enter)'}</button>
+            <button data-a="close">先不要${mob ? '' : ' (Esc)'}</button>
           </div>
         </div>
       </div></div>`;
@@ -773,12 +774,13 @@ export class UavOps {
     if (!this.hud) return;
     const modeName: Record<string, string> = { takeoff: '手動起飛', mission: '自動航線', rth: '返航', land: '手動降落', off: '' };
     const keys = this.mode === 'takeoff' ? 'Space 上升　WASD 平移' : this.mode === 'land' ? 'WASD 對準　Shift 下降　Space 上升' : this.mode === 'mission' ? `航點 ${Math.min(this.pi + 1, this.path.length)} / ${this.path.length}` : '返航中';
+    const keysT = ui.fixText(keys);
     const home = this.home!;
     const off = Math.hypot(this.pos.x - home.x, this.pos.z - home.z);
     this.hud.innerHTML = `
       <div class="uh-top"><b>${modeName[this.mode]}</b><span>高度 ${agl.toFixed(1)} m</span><span>照片 ${this.log.photos}</span><span>覆蓋 ${Math.round(coverOf(this.grid) * 100)}%</span>${this.mode === 'land' ? `<span>離起降墊 ${off.toFixed(1)} m</span>` : ''}</div>
       ${this.warn ? `<div class="uh-warn">${this.warn}</div>` : ''}
-      <div class="uh-keys">${keys}</div>`;
+      <div class="uh-keys">${keysT}</div>`;
   }
 
   /** 某個世界座標點有沒有被照片拍到 */

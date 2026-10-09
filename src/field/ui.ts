@@ -50,6 +50,7 @@ export function toast(text: string, kind: 'info' | 'warn' | 'bad' | 'good' = 'in
 
 /** 主角內心 OS：畫面中下方的思考泡泡 */
 export function thought(text: string, ms = 4200) {
+  text = fixText(text);
   const t = el('div', 'thought', `<span class="th-dots">…</span>${text}`);
   document.body.appendChild(t);
   setTimeout(() => t.classList.add('out'), ms);
@@ -138,10 +139,11 @@ export function showWorkOrder(wo: { seq: string; item: string; place: string; sp
 // ------------------------------------------------------------------
 // 對話
 // ------------------------------------------------------------------
-let faceHook: ((o: unknown) => void) | null = null;
-export function setFaceHook(fn: (o: unknown) => void) { faceHook = fn; }
+let faceHook: ((o: unknown, also?: unknown) => void) | null = null;
+export function setFaceHook(fn: (o: unknown, also?: unknown) => void) { faceHook = fn; }
 /** 對話前把玩家視角轉向說話的人 */
-export function faceSpeaker(o: unknown) { if (o && faceHook) faceHook(o); }
+/** also：對話時也要看得到的東西 (例如阿姨的界樁)，手機版會把它一起框進畫面 */
+export function faceSpeaker(o: unknown, also?: unknown) { if (o && faceHook) faceHook(o, also); }
 
 export interface DialogOption { text: string; reply: string; score: number; tag: string; /** 有值時選項不可選，並顯示原因 */ disabled?: string; id?: string }
 export function showDialog(speaker: string, line: string, options: DialogOption[], onPick: (o: DialogOption) => void) {

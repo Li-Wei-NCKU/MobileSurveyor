@@ -39,13 +39,13 @@ export class MobileHud {
         <button type="button" class="m-hint"><span class="m-hint-no"></span><span class="m-hint-text">…</span></button>
         <div class="m-top-btns">
           <div class="m-compass" aria-label="指北針"><div class="m-compass-dial"><b class="n">北</b><b class="e">東</b><b class="s">南</b><b class="w">西</b></div><i></i></div>
-          <button type="button" data-a="book" aria-label="外業手簿">📒</button>
           <button type="button" data-a="save" aria-label="存檔">💾</button>
           <button type="button" data-a="audio" aria-label="聲音">🔊</button>
         </div>
       </div>
       <div class="m-bar"></div>
-      <div class="m-bar-side"></div>`;
+      <div class="m-bar-side"></div>
+      <div class="m-heat" aria-hidden="true"></div>`;
     document.body.appendChild(this.root);
     this.top = this.root.querySelector('.m-top') as HTMLElement;
     this.hint = this.root.querySelector('.m-hint') as HTMLElement;
@@ -58,8 +58,7 @@ export class MobileHud {
       b.onclick = (e) => {
         e.stopPropagation();
         const a = b.dataset.a;
-        if (a === 'book') this.openBook();
-        else if (a === 'save') quickSaveMenu(this.app, this.field);
+        if (a === 'save') quickSaveMenu(this.app, this.field);
         else if (a === 'audio') openAudioPanel();
       };
     });

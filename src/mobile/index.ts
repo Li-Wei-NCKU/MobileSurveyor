@@ -26,6 +26,8 @@ import { installLookMode } from './lookMode';
 import { installUavTouch } from './uavTouch';
 import { installMobileDebug } from './debugMobile';
 import { applyGfx } from './gfx';
+import { fixKeyboardText } from './textFix';
+import { installDashQte } from './dashQte';
 
 (window as AnyObj).onGameAppReady = (app: GameApp) => {
   const player = app.player as unknown as MobilePlayer;
@@ -52,31 +54,32 @@ import { applyGfx } from './gfx';
   installTrunkView();
   installLookMode(app, player);
   const uavPad = installUavTouch();
+  installDashQte(app, player);
   const guide = new MobileGuide(app, field, player);
 
   // 說明文字裡的鍵盤操作改寫成觸控說法
-  setTextFilter((t) => t
-    .replace(/對著([^，。）]{1,10})按\s*E/g, '點$1')
-    .replace(/看著([^，。）]{1,10})按\s*E/g, '點$1')
-    .replace(/按\s*E\s*鍵?/g, '點一下')
-    .replace(/按\s*G\s*鍵?/g, '用「放下」鍵')
-    .replace(/按\s*F\s*鍵?/g, '用「喝水」鍵')
-    .replace(/按\s*Q\s*鍵?/g, '點「外業地圖」')
-    .replace(/按\s*R\s*打開收音機[^。]*/g, '點右下角的收音機')
-    .replace(/WASD/g, '搖桿'));
+  setTextFilter(fixKeyboardText);
   const origPanel = app.updateMissionPanel.bind(app);
   (app as AnyObj).updateMissionPanel = (title: string, tasks: AnyObj[], i: number, hint: string) =>
     origPanel(title, tasks, i, typeof hint === 'string' ? (fixText(hint)) : hint);
 
   // 對話時：人偶轉向對方、相機把兩人框進來
-  setFaceHook((o) => {
+  setFaceHook((o, also) => {
     const obj = o as THREE.Object3D;
     if (!obj) return;
     const p = player.position;
     if (obj.userData?.type === 'npc') obj.rotation.y = Math.atan2(-(p.z - obj.position.z), p.x - obj.position.x);
     player.faceAt = { x: obj.position.x, z: obj.position.z };
     player.cancelWalk();
-    cam.focus = { x: obj.position.x, z: obj.position.z };
+    // 對話時也要看到的東西 (界樁之類)：把它一起框進畫面，並且往它那邊偏一點
+    const ex = also as THREE.Object3D | undefined;
+    if (ex?.position) {
+      cam.focus = { x: (obj.position.x + ex.position.x) / 2, z: (obj.position.z + ex.position.z) / 2 };
+      cam.focusWide = true;
+    } else {
+      cam.focus = { x: obj.position.x, z: obj.position.z };
+      cam.focusWide = false;
+    }
   });
   // 對話框關掉後鏡頭回來
   const mo = new MutationObserver(() => {

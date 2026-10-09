@@ -39,6 +39,9 @@ class LevelScope {
   private savedCtl: ((dt: number) => void) | null = null;
   private savedFov = 65;
   private focus = 10;
+  /** 打開望遠鏡時的水平角：左右只能在這附近轉，不然會轉到不知道哪裡去 */
+  private yaw0 = 0;
+  private static readonly YAW_LIM = 0.32;   // ±18° 左右
   private keys = { l: false, r: false, fast: false };
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
   private onKeyUp: ((e: KeyboardEvent) => void) | null = null;
@@ -59,18 +62,19 @@ class LevelScope {
     p.externalControl = (dt: number) => this.tick(dt);
 
     const mob = !!(window as AnyObj).__mobile;
+    this.yaw0 = this.o.head.rotation.y;
     this.root = el('scope');
     this.root.innerHTML = `
       <svg class="scope-ret" aria-hidden="true"></svg>
       <div class="scope-mask"></div>
       <div class="scope-focus"><span>調焦</span><div class="sf-bar"><i></i></div></div>
-      <div class="scope-tilt" hidden>標尺沒扶直！<kbd class="cap">Y</kbd> 用對講機叫學弟扶好</div>
+      <div class="scope-tilt" hidden>標尺沒扶直！${mob ? '點下面的「叫學弟扶直」' : '<kbd class="cap">Y</kbd> 用對講機叫學弟扶好'}</div>
       <div class="scope-vibe" hidden>⚠ 地面震動中：補償器擺動，影像一直跳</div>
       ${mob ? '<div class="scope-touch"></div>' : ''}
       <div class="bench-card paper scope-card">
-        <div class="bench-head"><h3>${o.title}</h3><span class="bench-keys"><kbd class="cap">A</kbd><kbd class="cap">D</kbd> 轉動　<kbd class="cap">Q</kbd><kbd class="cap">E</kbd> 調焦　<kbd class="cap cap-wide">Esc</kbd> 離開</span></div>
+        <div class="bench-head"><h3>${o.title}</h3><span class="bench-keys">${mob ? '左右拖曳畫面轉動　下面的滑桿調焦' : '<kbd class="cap">A</kbd><kbd class="cap">D</kbd> 轉動　<kbd class="cap">Q</kbd><kbd class="cap">E</kbd> 調焦　<kbd class="cap cap-wide">Esc</kbd> 離開'}</span></div>
         <div class="bench-body">
-          <p>電子水準儀會自己讀條碼。把<strong>豎絲對準標尺</strong>、<strong>調焦到清楚</strong>，按 <kbd class="cap cap-wide">Enter</kbd> 量測。</p>
+          <p>電子水準儀會自己讀條碼。把<strong>豎絲對準標尺</strong>、<strong>調焦到清楚</strong>，${mob ? '再點「量測」。' : '按 <kbd class="cap cap-wide">Enter</kbd> 量測。'}</p>
           <div class="dl-screen"><span class="dl-label">DNA 03</span><span class="dl-val">— — —</span></div>
           <p class="bench-fb" aria-live="polite"></p>
           ${mob ? `<div class="scope-mbar">
@@ -124,8 +128,13 @@ class LevelScope {
       if (!on) return;
       const dx = e.clientX - px;
       px = e.clientX;
-      // 拖畫面：影像跟著手指走 (手指往右 → 鏡頭往左轉)
-      this.o.head.rotation.y += dx * 0.00085;
+      // 拖畫面：影像跟著手指走 (手指往右 → 鏡頭往左轉)；左右有角度上限，不會轉到天邊去
+      const lim = LevelScope.YAW_LIM;
+      const want = this.o.head.rotation.y + dx * 0.00055;
+      const y = Math.max(this.yaw0 - lim, Math.min(this.yaw0 + lim, want));
+      if (y !== this.o.head.rotation.y) pad.classList.remove('at-limit');
+      else pad.classList.add('at-limit');
+      this.o.head.rotation.y = y;
     });
     const up = (e: PointerEvent) => { on = false; try { pad.releasePointerCapture(e.pointerId); } catch { /* 合成事件 */ } };
     pad.addEventListener('pointerup', up);
@@ -188,7 +197,7 @@ class LevelScope {
     const r = this.o.measure(this.blur);
     const scr = this.root?.querySelector('.dl-val') as HTMLElement | null;
     if (scr) { scr.textContent = r.text; scr.classList.toggle('err', !r.ok); }
-    if (!r.ok) { this.say('量測失敗，調整後再按一次 Enter。', 'bad'); audio()?.playClick?.(); return; }
+    if (!r.ok) { this.say((window as AnyObj).__mobile ? '量測失敗，調整後再量一次。' : '量測失敗，調整後再按一次 Enter。', 'bad'); audio()?.playClick?.(); return; }
     this.done = true;
     this.say('已記錄到手簿。', 'ok');
     audio()?.playSuccessChime?.();
@@ -199,7 +208,10 @@ class LevelScope {
     const head = this.o.head;
     const cam = this.app.sceneManager.camera;
     const turn = (this.keys.r ? -1 : 0) + (this.keys.l ? 1 : 0);
-    if (turn) head.rotation.y += turn * dt * (this.keys.fast ? 0.12 : 0.012);
+    if (turn) {
+      head.rotation.y += turn * dt * (this.keys.fast ? 0.12 : 0.012);
+      if ((window as AnyObj).__mobile) head.rotation.y = Math.max(this.yaw0 - LevelScope.YAW_LIM, Math.min(this.yaw0 + LevelScope.YAW_LIM, head.rotation.y));
+    }
     head.updateMatrixWorld(true);
     const pos = head.localToWorld(new THREE.Vector3(0, 0.074, 0.135));
     const fwd = head.localToWorld(new THREE.Vector3(0, 0.074, 1.135)).sub(pos);

@@ -61,6 +61,8 @@ export class MobilePlayer {
   private facing = 0;
   /** 只讓人偶轉向某點一下 (對話時) */
   faceAt: { x: number; z: number } | null = null;
+  /** 連點衝刺 (阿黃 QTE)：每點一下往 buf 加一段距離，這裡再平滑跑出去 */
+  dash: { x: number; z: number; buf: number } | null = null;
 
   constructor(surveyScene: AnyObj, onInteract: (obj: THREE.Object3D) => void) {
     this.surveyScene = surveyScene;
@@ -124,6 +126,31 @@ export class MobilePlayer {
   private updateWalking(delta: number) {
     const t = this.target;
     let moving = 0;
+    const dsh = this.dash;
+    if (dsh) {
+      this.target = null; this.path = [];
+      const dx = dsh.x - this.position.x, dz = dsh.z - this.position.z, d = Math.hypot(dx, dz);
+      if (dsh.buf > 0 && d > 1e-3) {
+        const st = Math.min(d, dsh.buf, 7.2 * delta);   // 衝刺上限 7.2 m/s
+        dsh.buf = Math.max(0, dsh.buf - st);
+        this.position.x += dx / d * st; this.position.z += dz / d * st;
+        this.facing = Math.atan2(-dz, dx);
+        this.euler.y = Math.atan2(-dx, -dz);
+        moving = 4.8;
+      } else {
+        dsh.buf = 0;
+        if (d > 0.05) this.facing = Math.atan2(-dz, dx);
+      }
+      const gh0 = this.surveyScene.heightAt ? this.surveyScene.heightAt(this.position.x, this.position.z) : 0;
+      this.position.y = gh0 + 1.65;
+      this.walkT += delta;
+      this.avatar.position.set(this.position.x, gh0, this.position.z);
+      let d0 = (this.facing - this.avatar.rotation.y) % (Math.PI * 2);
+      if (d0 > Math.PI) d0 -= Math.PI * 2; if (d0 < -Math.PI) d0 += Math.PI * 2;
+      this.avatar.rotation.y += d0 * Math.min(1, delta * 14);
+      animateWalk(this.avatar, this.walkT, moving);
+      return;
+    }
     if (t && !this.isModalOpen()) {
       if (t.follow) {
         this.repathT -= delta;

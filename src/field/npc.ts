@@ -133,6 +133,10 @@ export function animateWalk(p: THREE.Group, t: number, speed: number) {
   if (pose === 'carryFront') { arms[0].rotation.z = 1.15; arms[1].rotation.z = 1.15; arms[0].rotation.x = -0.2; arms[1].rotation.x = 0.2; return; }
   if (pose === 'carryShoulder') { arms[1].rotation.z = 2.1; arms[1].rotation.x = 0; arms[0].rotation.z = -a * 0.2; arms[0].rotation.x = 0; return; }
   if (pose === 'carryHand') { arms[0].rotation.z = -a * 0.15; arms[0].rotation.x = -0.12; arms[1].rotation.x = 0; arms[1].rotation.z = a * 0.8; return; }
+  // 手機版人偶：'carrySide' 右手提著 (左手照擺)、'carrySideBoth' 兩手都提著、'carryShoulderBoth' 右肩扛＋左手提
+  if (pose === 'carrySide') { arms[1].rotation.z = a * 0.12; arms[1].rotation.x = -0.1; arms[0].rotation.x = 0; arms[0].rotation.z = -a * 0.8; return; }
+  if (pose === 'carrySideBoth') { arms[1].rotation.z = a * 0.1; arms[1].rotation.x = -0.1; arms[0].rotation.z = -a * 0.1; arms[0].rotation.x = -0.1; return; }
+  if (pose === 'carryShoulderBoth') { arms[1].rotation.z = 2.1; arms[1].rotation.x = 0; arms[0].rotation.z = -a * 0.1; arms[0].rotation.x = -0.1; return; }
   arms[0].rotation.x = 0; arms[1].rotation.x = 0;
   arms[0].rotation.z = -a * 0.8; arms[1].rotation.z = a * 0.8;
 }

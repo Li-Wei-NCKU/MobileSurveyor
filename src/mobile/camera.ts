@@ -19,6 +19,10 @@ export class FollowCamera {
   fov = 36;
   /** 對話取景：目標點移到兩人中間 */
   focus: { x: number; z: number } | null = null;
+  /** 對話時視軸下壓的程度 (0→1)：把對方和地上的東西抬到畫面上半部，不被對話框蓋住 */
+  private talkDrop = 0;
+  /** 對話時要把旁邊的東西一起框進來 (視野放寬一點) */
+  focusWide = false;
   /** 靠近儀器時自動拉近，並把儀器一起框進來 (null = 不拉近) */
   closeUp: { x: number; z: number } | null = null;
   private closeK = 0;
@@ -48,7 +52,7 @@ export class FollowCamera {
 
   /** 瞬間跳到玩家身上 (換關、讀檔)；sync 會立刻把相機算好 (測試用) */
   snap() { this.wasFollowing = false; this.rack = null; this.rackBlend = 0; }
-  sync() { this.wasFollowing = false; if (this.rack) this.rackBlend = 1; this.apply(); }
+  sync() { this.wasFollowing = false; if (this.rack) this.rackBlend = 1; this.talkDrop = this.focus ? 1 : 0; this.apply(); }
   /** 兩指縮放：改鏡頭距離並記住 */
   setDist(d: number) {
     this.dist = THREE.MathUtils.clamp(d, 9, 32);
@@ -79,7 +83,7 @@ export class FollowCamera {
     this.closeK += ((this.closeUp ? 1 : 0) - this.closeK) * Math.min(1, (1 / 60) * 3);
     if (this.closeK < 0.002) this.closeK = 0;
     let dist = this.dist * (1 - 0.56 * this.closeK), fov = this.fov;
-    if (this.focus) { tx = (tx + this.focus.x) / 2; tz = (tz + this.focus.z) / 2; ty = foot + 1.1; dist = this.dist * 0.8; fov = 26; }
+    if (this.focus) { tx = (tx + this.focus.x) / 2; tz = (tz + this.focus.z) / 2; ty = foot + 1.1; dist = this.dist * (this.focusWide ? 0.7 : 0.8); fov = this.focusWide ? 29 : 26; }
     else if (this.closeK > 0 && this.closeUp) {
       // 把玩家和儀器一起框進來
       tx += ((this.closeUp.x + p.position.x) / 2 - tx) * this.closeK;
@@ -114,6 +118,20 @@ export class FollowCamera {
       cl2 = this.look.clone().lerp(V(r.x, r.y - 2.0, r.z), k);
       fov += (rfov - fov) * k;
     }
+    // 中暑：鏡頭輕微晃
+    const heat = document.body.classList.contains('heat2') ? 1 : document.body.classList.contains('heat1') ? 0.55 : 0;
+    if (heat > 0) {
+      const t = performance.now() / 1000;
+      cp2 = cp2.clone();
+      cp2.x += Math.sin(t * 5.3) * 0.035 * heat + Math.sin(t * 11.7) * 0.015 * heat;
+      cp2.y += Math.sin(t * 4.1 + 1.3) * 0.03 * heat;
+      cp2.z += Math.cos(t * 6.7) * 0.03 * heat;
+    }
+    // 對話中：視軸往下壓，讓對方和他腳邊的東西 (界樁之類) 落在對話框上方
+    const wantDrop = this.focus ? 1 : 0;
+    this.talkDrop += (wantDrop - this.talkDrop) * Math.min(1, dt * 5);
+    if (this.talkDrop < 0.002) this.talkDrop = 0;
+    if (this.talkDrop > 0) { cl2 = cl2.clone(); cl2.y -= (this.focusWide ? 3.4 : 1.35) * this.talkDrop; }
     cam.position.copy(cp2);
     this.tmpCam.position.copy(cp2);
     this.tmpCam.up.set(0, 1, 0);

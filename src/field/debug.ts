@@ -108,7 +108,7 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         <button data-a="lv-cop-ok">警察來：交通錐擺對</button>
       </div>
       <label class="kd-check"><input type="checkbox" data-k="truth"${dbg.truth ? ' checked' : ''}> 望遠鏡裡顯示正確讀數</label>
-      <p class="kd-note">阿伯和阿黃的台詞依上面「第一天的結果」決定；改完按「存檔」再觸發。機車、阿黃需要先架好儀器、學弟在立尺。小朋友依「第一天的結果」：被攔住→來幫忙顧尺墊，其他→來踢尺墊。</p>
+      <p class="kd-note">阿伯和阿黃的台詞依上面「第一天的結果」決定；改完按「存檔」再觸發。機車、阿黃需要先架好儀器、學弟在立尺。小朋友依「第一天的結果」：被攔住→來幫忙顧鐵墊，其他→來踢鐵墊。</p>
     </section>` : ''}
     ${inField && job === 'gcp' ? `
     <section>

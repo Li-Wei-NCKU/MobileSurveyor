@@ -115,7 +115,7 @@ export function buildItemModel(id: ItemId): THREE.Group {
     }
     case 'box': {
       if (id === 'plate') {
-        // 兩個鑄鐵尺墊疊在一起：三角形底板 + 中間圓頂
+        // 兩個鑄鐵鐵墊疊在一起：三角形底板 + 中間圓頂
         [0, 0.07].forEach(y => {
           const tri = new THREE.Shape();
           for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3 + Math.PI / 2; const x = Math.cos(a) * 0.15, z = Math.sin(a) * 0.15; if (i === 0) tri.moveTo(x, z); else tri.lineTo(x, z); }

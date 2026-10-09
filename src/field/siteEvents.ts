@@ -199,39 +199,22 @@ export class SiteEvents {
     return null;
   }
 
-  /** 手機版：阿黃登場後先選指令 (骰子)，失敗再給一次衝去黃圈擋的機會 */
-  private dogCommand(d: Actor) {
-    d.state = 'intro'; d.t = 0;
-    const p = this.h.playerPos();
-    const tp = this.tripod();
-    const trip = tp ? tp.position : CKSV;
-    const dist = Math.hypot(p.x - trip.x, p.z - trip.z);
-    const stop = (tag: string, cause: string) => {
-      sfx.thud();
-      bark(3, 1, true);
-      this.h.addPR(1, tag);
-      tell(cause, '牠緊急煞車跑走，腳架沒事');
-      if (!this.dogOutcome) this.dogOutcome = 'stopped';
-      d.state = 'stopped'; d.t = 0;
-    };
-    const rush = (slow: boolean, msg: string) => {
-      ui.toast(msg, 'bad', 3200);
-      d.slow = slow; d.state = 'rush'; d.t = 0;
-    };
-    ui.showDialog('阿黃衝過來了！', `牠從產業道路直直衝向腳架，你離腳架大約 ${Math.round(dist)} m。`, [
-      { id: 'shout', text: '大喊「阿黃！不行！」', reply: '「阿黃——！不行！」', score: 0, tag: '' },
-      { id: 'block', text: `衝過去擋在腳架前面（${dist < 4 ? '很近，應該來得及' : dist < 8 ? '有點距離' : '離很遠……'}）`, reply: '（你拔腿就跑——）', score: 0, tag: '' },
-      { id: 'ignore', text: '（不管牠，繼續做事）', reply: '（你繼續看手簿……）', score: 0, tag: '' },
-    ], (o) => {
-      if (o.id === 'shout') {
-        if (roll() < 0.5) { ui.toast('阿黃愣了一下，搖搖尾巴跑走了。', 'good', 3000); stop('大喊一聲攔住阿黃', '阿黃衝過來時大喊一聲'); }
-        else rush(true, '阿黃完全沒理你！快衝到黃圈擋住牠！');
-      } else if (o.id === 'block') {
-        const pch = Math.max(0.2, Math.min(0.85, 0.9 - dist * 0.07));
-        if (roll() < pch) { ui.toast('你衝到腳架前面，阿黃緊急煞車……搖搖尾巴跑走了。', 'good', 3000); stop('跑到腳架前擋住阿黃', '阿黃衝過來時，跑到腳架前擋住'); }
-        else rush(true, dist < 4 ? '牠從你腳邊鑽過去了！快追到黃圈擋住！' : '來不及！牠已經繞過你了——快衝到黃圈！');
-      } else rush(false, '阿黃直直衝過去……');
-      this.relock();
+  /** 手機版：阿黃衝過來 → 畫面下方跳出「跑！」，連點衝到黃圈擋住牠 */
+  private dogDash(d: Actor) {
+    const open = (window as AnyObj).__dashQte as ((o: AnyObj) => () => void) | undefined;
+    if (!open) return;
+    ui.toast('連點下面的「跑！」衝到腳架前面擋住阿黃！', 'warn', 3600);
+    open({
+      title: '阿黃衝過來了！',
+      perTap: 0.85,
+      target: () => {
+        if (d.state !== 'rush' || this.h.inTruck()) return null;
+        const g = this.guard;
+        if (g && g.visible) return { x: g.x, z: g.z };
+        const tp = this.tripod();
+        const t = tp ? tp.position : CKSV;
+        return { x: t.x + 0.8, z: t.z + 0.6 };
+      },
     });
   }
 
@@ -333,7 +316,7 @@ export class SiteEvents {
         // 從產業道路上跑過來 (路面沒有高草，鏡頭看得到)
         const d = this.spawn('dog', -9.2, 30);
         bark(30, 3);
-        this.intro(d, [d], '土狗　阿黃', '腳架衝撞者', (window as AnyObj).__mobile ? '牠衝過來了——怎麼辦？' : '快跑到腳架前的黃圈擋住牠！', () => { if ((window as AnyObj).__mobile) this.dogCommand(d); else { d.state = 'rush'; d.t = 0; } });
+        this.intro(d, [d], '土狗　阿黃', '腳架衝撞者', (window as AnyObj).__mobile ? '連點「跑」衝到腳架前面擋住牠！' : '快跑到腳架前的黃圈擋住牠！', () => { d.state = 'rush'; d.t = 0; if ((window as AnyObj).__mobile) this.dogDash(d); });
       } else {
         const k1 = this.spawn('kid', -9.4, 29);
         const k2 = this.spawn('kid', -8.6, 30.2);
@@ -430,11 +413,12 @@ export class SiteEvents {
               tell('阿黃衝過來時，跑到腳架前擋住', '牠緊急煞車跑走，腳架沒事');
               if (!this.dogOutcome) this.dogOutcome = 'stopped';
               a.state = 'stopped'; a.t = 0;
+              (window as AnyObj).__dashQteClose?.();
               return;
             }
           }
           if (this.walk(a, tx, tz, a.kind === 'dog' ? (a.slow ? 3.4 : 5.2) : 1.7, dt)) {
-            if (a.kind === 'dog') this.guard?.hide();
+            if (a.kind === 'dog') { this.guard?.hide(); (window as AnyObj).__dashQteClose?.(); }
             if (a.state === 'rush') {
               if (a.kind === 'dog') this.dogOutcome = 'bumped'; else this.kidsOutcome = 'bumped';
               tell(a.kind === 'dog' ? '阿黃衝過來時沒有擋' : '小朋友衝過來時沒有攔', '腳架被碰歪，要重新定心定平');
@@ -821,7 +805,7 @@ export class SiteEvents {
 
   /** 到了界樁旁邊 */
   private talkStake(a: Actor) {
-    ui.faceSpeaker(a.g);
+    ui.faceSpeaker(a.g, this.stake);
     ui.showDialog('騎車經過的阿姨', '就是這支啦！隔壁的講阮的界佇彼爿，你看是毋是予人偷徙過？<br><small>（就是這支！隔壁說我們的界在那邊，你看是不是被人偷移過？）</small>', [
       { id: 'proper', text: '阿姨，界樁準不準要地政事務所用正式的圖資跟儀器鑑界，我這樣看不算數，也不能幫妳判定。',
         reply: '喔……按呢我白帶你行一逝，歹勢歹勢。<br><small>（那我白帶你走一趟，不好意思。）</small>', score: 1, tag: '陪阿姨看界樁後，說明要申請鑑界（但已經耗掉一段時間）' },
@@ -875,7 +859,7 @@ export class SiteEvents {
     sfx.phoneRing();
     const tryAnswer = () => {
       if (Math.abs(this.h.truckSpeed()) > 0.6) {
-        ui.toast('電話響了（組長）……先靠邊停車再接（Space 停車）。', 'warn', 2200);
+        ui.toast('電話響了（組長）……先靠邊停車再接。', 'warn', 2200);
         sfx.phoneRing();
         setTimeout(tryAnswer, 2600);
         return;

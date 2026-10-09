@@ -85,7 +85,7 @@ export function buildLevelStaff(): THREE.Group {
   return g;
 }
 
-/** 鑄鐵尺墊 (轉點用)，頂部圓頂高 4 cm */
+/** 鑄鐵鐵墊 (轉點用)，頂部圓頂高 4 cm */
 export function buildTurningPlate(): THREE.Group {
   const sm = SM();
   const g = new THREE.Group();
@@ -96,5 +96,5 @@ export function buildTurningPlate(): THREE.Group {
   g.add(sm.mk(new THREE.SphereGeometry(0.03, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), sm.M.steel, 0, 0.012, 0));
   return g;
 }
-/** 尺墊頂 (標尺立在上面) 離地高度 */
+/** 鐵墊頂 (標尺立在上面) 離地高度 */
 export const PLATE_TOP = 0.042;

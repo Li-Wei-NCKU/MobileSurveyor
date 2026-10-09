@@ -63,7 +63,7 @@ export class FieldDay {
   private yardOcc: { roof: THREE.Object3D | null; walls: THREE.Mesh[] } = { roof: null, walls: [] };
   carrying: ItemId | null = null;
   held: THREE.Group | null = null;
-  /** 另一隻手拎著的東西 (例如收工時標尺 + 尺墊一起拿)：手上那件放好後自動換成這件 */
+  /** 另一隻手拎著的東西 (例如收工時標尺 + 鐵墊一起拿)：手上那件放好後自動換成這件 */
   extraCarry: ItemId | null = null;
   private heldExtra: THREE.Group | null = null;
   inTruck = false;
@@ -587,16 +587,50 @@ export class FieldDay {
     const p = this.app.player as AnyObj;
     return (extra ? p.handL : p.hand) || this.app.sceneManager.camera;
   }
+  /** 這件東西怎麼拿：腳架、標尺、桿子扛肩上；重的箱子兩手捧；其他單手提 */
+  private carryStyle(item: ItemId): 'shoulder' | 'front' | 'side' {
+    const def = ITEMS[item];
+    if (def.kind === 'tripod' || def.kind === 'staff' || def.kind === 'pole') return 'shoulder';
+    if (def.heavy || def.kind === 'water') return 'front';
+    return 'side';
+  }
+  /** 依照手上 (和另一手) 的東西決定人偶姿勢 */
+  private updateCarryPose() {
+    const p = this.app.player as AnyObj;
+    if (!p.avatar) return;
+    if (!this.carrying) { p.avatar.userData.pose = this.extraCarry ? 'carryHand' : undefined; return; }
+    const st = this.carryStyle(this.carrying);
+    const both = !!this.extraCarry;
+    p.avatar.userData.pose = st === 'front' ? 'carryFront'
+      : st === 'shoulder' ? (both ? 'carryShoulderBoth' : 'carryShoulder')
+      : (both ? 'carrySideBoth' : 'carrySide');
+  }
+
   private placeHeld(h: THREE.Group, item: ItemId, extra: boolean) {
     const p = this.app.player as AnyObj;
     const def = ITEMS[item];
     if (p.hand) {
-      // 人偶手上：捧在身前，大的東西 (腳架、標尺) 扛著
+      // 人偶身上：腳架／標尺扛肩、重箱子兩手捧在身前、其他單手提在身側
+      // 設備模型本身是「躺著、長邊沿 X」的，所以：
+      //   扛肩 = 長邊維持前後向、往後翹一點，放在肩膀高度
+      //   單手提 = 掛在手下面 (長的就讓它直立)
+      //   兩手捧 = 長邊橫過身體，捧在胸前
+      const st = extra ? 'side' : this.carryStyle(item);
       const long = def.d > 1 || def.w > 1;
-      h.position.set(0, long ? 0.1 : 0, 0);
-      h.rotation.set(0, Math.PI / 2, long ? -0.35 : 0);
-      h.scale.setScalar(extra ? 0.6 : 0.72);
-      p.avatar.userData.pose = 'carryFront';
+      if (st === 'shoulder') {
+        h.position.set(-0.42, 0.52, -0.12);
+        h.rotation.set(0, 0, 0.26);
+        h.scale.setScalar(1);
+      } else if (st === 'front') {
+        h.position.set(-0.12, 0.26, -0.26);
+        h.rotation.set(0, Math.PI / 2, 0);
+        h.scale.setScalar(extra ? 0.7 : 0.9);
+      } else {
+        h.position.set(0, long ? -0.34 : -0.24, 0);
+        h.rotation.set(0, 0, long ? 1.3 : 0);
+        h.scale.setScalar(extra ? 0.7 : 0.88);
+      }
+      this.updateCarryPose();
       return;
     }
     const long = def.d > 1 || def.w > 1;
@@ -607,7 +641,7 @@ export class FieldDay {
   }
   private handPoseReset() {
     const p = this.app.player as AnyObj;
-    if (p.avatar && !this.carrying && !this.extraCarry) p.avatar.userData.pose = undefined;
+    if (p.avatar) this.updateCarryPose();
   }
 
   private collidePlayer() {
@@ -685,7 +719,7 @@ export class FieldDay {
 
   private exitTruck(silent = false) {
     if (!this.inTruck) return;
-    if (!silent && Math.abs(this.truck.speed) > 1.0) { ui.toast('車還在動，先停好再下車（手煞車）。', 'warn'); return; }
+    if (!silent && Math.abs(this.truck.speed) > 1.0) { ui.toast((window as AnyObj).__mobile ? '車還在動，等車停下來再下車。' : '車還在動，先停好再下車（手煞車）。', 'warn'); return; }
     const p = this.app.player;
     const sm = this.app.sceneManager;
     this.inTruck = false;
@@ -743,10 +777,18 @@ export class FieldDay {
     const d = Math.hypot(p.x - t.x, p.z - t.z);
     const tk = this.truck.pos;
     const dTruck = Math.hypot(p.x - tk.x, p.z - tk.z);
+    // 回公司拿東西：拿到了就先開車回現場，不要又叫你從後斗拿出來
+    if (['site', 'observe'].includes(this.phase) && Math.hypot(p.x - YARD.x, p.z - YARD.z) < 40) {
+      const ud = t.obj?.userData?.type;
+      const atTruck = ud === 'truck' || ud === 'truck_bed';
+      const tNearYard = Math.hypot(t.x - YARD.x, t.z - YARD.z) < 40;
+      if (this.carrying && !tNearYard) return { ...this.guideTail(), label: `把${ITEMS[this.carrying].name}放上後斗`, reach: 1.4 };
+      if (!this.carrying && (atTruck || !tNearYard)) return { ...this.guideDoor(), label: '東西拿到了，開車回現場', reach: 1.3 };
+    }
     if (d > 70 && dTruck < 45 && dTruck < d) {
       const toYard = Math.hypot(t.x - YARD.x, t.z - YARD.z) < 45;
       const dr = this.guideDoor();
-      return { ...dr, label: toYard ? (t.item ? `開車回公司拿${ITEMS[t.item].name}` : '開車回公司') : '開車回現場', reach: 1.3 };
+      return { ...dr, label: toYard ? (t.item ? `哎呀！忘了帶${ITEMS[t.item].name}，開車回公司拿吧` : '開車回公司') : '開車回現場', reach: 1.3 };
     }
     return t;
   }
@@ -756,6 +798,11 @@ export class FieldDay {
     const t = this.truck.toWorld(0.95, 0, 2.1);
     return { x: t.x, z: t.z, obj: this.truck.cabHit as THREE.Object3D };
   }
+  /** 車尾 */
+  private guideTail() {
+    const t = this.truck.toWorld(-3.6, 0, 0);
+    return { x: t.x, z: t.z, obj: this.truck.tailHit as THREE.Object3D };
+  }
 
   private guideTargetRaw(): GuideTarget | null {
     if (this.inTruck || this.phase === 'brief' || this.phase === 'done') return null;
@@ -763,6 +810,17 @@ export class FieldDay {
     const tail = () => { const t = this.truck.toWorld(-3.6, 0, 0); return { x: t.x, z: t.z, obj: this.truck.tailHit as THREE.Object3D }; };
     const door = () => this.guideDoor();
     const find = (f: (o: THREE.Object3D) => boolean) => this.app.sceneManager.interactiveObjects.find(f);
+
+    // 太渴了：先去喝水
+    if (this.heatStage >= 2) {
+      const w = this.ground.find(x => x.item === 'water');
+      const pp0 = this.app.player.position;
+      if (this.carrying === 'water') return { ...door(), label: '快喝一瓶水！', reach: 1.2 };
+      if (w && Math.hypot(w.obj.position.x - pp0.x, w.obj.position.z - pp0.z) < 60) {
+        return { x: w.obj.position.x, z: w.obj.position.z, label: '快去喝水！', reach: 1.3, obj: w.obj };
+      }
+      if (this.grid.has('water')) return { ...tail(), label: '快去車上喝水！', reach: 1.4 };
+    }
 
     // 東西忘在公司：指引開車回去拿 (m.forgot 是遊戲自己記下來的)
     if (['site', 'observe'].includes(this.phase) && this.m.forgot.size) {
@@ -777,7 +835,7 @@ export class FieldDay {
           const g = this.ground.find(x => x.item === want);
           if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `拿${nm(want)}（剛剛忘了帶）`, reach: 1.1, obj: g.obj };
         }
-        return { ...door(), label: `開車回公司拿${nm(want)}`, reach: 1.3 };
+        return { ...door(), label: `哎呀！忘了帶${nm(want)}，開車回公司拿吧`, reach: 1.3 };
       }
       if (atYard) return { ...door(), label: '東西拿到了，開車回現場', reach: 1.3 };
     }
@@ -823,7 +881,7 @@ export class FieldDay {
         // 不在現場也不在後斗 = 忘在公司了
         const far = this.ground.find(x => x.item === it);
         if (far) return { x: far.obj.position.x, z: far.obj.position.z - 2.4, label: `拿${nm(it)}（忘了帶）`, reach: 1.1, obj: far.obj, item: it };
-        return { ...door(), label: `忘了帶${nm(it)}，開車回公司拿`, reach: 1.3, item: it };
+        return { ...door(), label: `哎呀！忘了帶${nm(it)}，開車回公司拿吧`, reach: 1.3, item: it };
       };
       if (!this.tripodSet) return fetch('tripod') || { ...mon, label: '在 CKSV 控制點上架三腳架', reach: 1.6 };
       if (!this.tribrachOn) return fetch('tribrach') || { ...mon, label: '把基座裝上腳架', reach: 1.6 };
@@ -1136,6 +1194,17 @@ export class FieldDay {
     if (spot) spot.uid = this.spawnGround(item, spot.pos, spot.rotY);
   }
 
+  /** 學弟自己從後斗拿一件 (不經過玩家的手)：拿到就把它從後斗移除 */
+  asstTakeFromTrunk(item: ItemId): boolean {
+    const pl = this.grid.placed.find(p => p.item === item);
+    if (!pl) return false;
+    this.truck.tailTarget = 1;
+    this.grid.remove(pl);
+    const mdl = this.trunkMeshes.get(pl.uid);
+    if (mdl) { this.truck.bedItems.remove(mdl); this.unregister(mdl); this.trunkMeshes.delete(pl.uid); }
+    return true;
+  }
+
   private takeFromTrunk(uid: number) {
     const pl = this.grid.placed.find(p => p.uid === uid);
     if (!pl) return;
@@ -1187,9 +1256,18 @@ export class FieldDay {
   // ================================================================
   // 互動 (由 player 準心呼叫)
   // ================================================================
+  /** 太渴了：只剩喝水、上車、跟人說話 */
+  private heatBlocks(ud: AnyObj): boolean {
+    if (this.heatStage < 2) return false;
+    if (ud.type === 'npc' || ud.type === 'truck' || ud.type === 'truck_bed' || ud.type === 'trunk_item') return false;
+    if (ud.type === 'field_item' && ud.item === 'water') return false;
+    return true;
+  }
+
   getInteractionPrompt(hit: THREE.Object3D): string | null {
     if (this.inTruck || this.phase === 'brief' || this.phase === 'done') return null;
     const ud = hit.userData || {};
+    if (this.heatBlocks(ud)) return '太渴了……先喝水';
     const carryName = this.carrying ? ITEMS[this.carrying].name : '';
     switch (ud.type) {
       case 'field_item':
@@ -1227,6 +1305,7 @@ export class FieldDay {
 
   onInteract(obj: THREE.Object3D) {
     const ud = obj.userData || {};
+    if (this.heatBlocks(ud)) { sfx.error(); ui.toast('太渴了，手都在抖……先喝一瓶水。', 'warn', 3000); return; }
     const gnss = this.app.levelsMap.gnss;
     if (this.job === 'level' && this.lv.carrySet && ['shelf', 'truck', 'truck_bed', 'trunk_item', 'field_item'].includes(ud.type)) {
       ui.toast('扛著整組儀器。先架好，或按 G 拆開放地上再裝車。', 'warn', 3000); sfx.error(); return;
@@ -1369,8 +1448,21 @@ export class FieldDay {
     }
     if (this.water > 50) this.thirstWarned = false;
     document.body.classList.toggle('thirsty', this.water <= 0.5);
+    // 中暑：30% 以下畫面開始暗、晃；10% 以下一定要先喝水
+    const hs = this.heatStage;
+    document.body.classList.toggle('heat1', hs >= 1);
+    document.body.classList.toggle('heat2', hs >= 2);
+    if (hs > this.heatWarned) {
+      this.heatWarned = hs;
+      if (hs === 1) ui.toast('太陽好毒……有點中暑了，找個地方喝水。', 'warn', 3800);
+      else ui.toast('頭很暈、手都在抖——先喝水，其他的等一下再說。', 'bad', 4200);
+    } else if (hs < this.heatWarned) this.heatWarned = hs;
     if (this.water <= 0.5 && !this.inTruck) this.app.player.carrySpeedFactor = (this.app.player.carrySpeedFactor || 1) * 0.7;
   }
+
+  /** 0 = 正常、1 = 有點中暑 (畫面變暗、晃)、2 = 一定要先喝水 */
+  get heatStage(): 0 | 1 | 2 { return this.water < 10 ? 2 : this.water < 30 ? 1 : 0; }
+  private heatWarned = 0;
 
   hydrate(amount: number, label: string) {
     this.water = Math.min(100, this.water + amount);

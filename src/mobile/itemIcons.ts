@@ -145,7 +145,7 @@ const ICONS: Record<ItemId, () => string> = {
       <rect x="16" y="52" width="68" height="30" rx="4" fill="${hex(ITEMS.water.color)}" stroke="${INK}" stroke-width="3"/>
       <path d="M16 64h68" stroke="#fff" stroke-width="5" opacity=".7"/>`;
   },
-  // 尺墊兩個
+  // 鐵墊兩個
   plate: () => `
     <ellipse cx="38" cy="60" rx="26" ry="12" fill="${tint(ITEMS.plate.color, 1.5)}" stroke="${INK}" stroke-width="3"/>
     <ellipse cx="38" cy="56" rx="26" ry="12" fill="${hex(ITEMS.plate.color)}" stroke="${INK}" stroke-width="3"/>

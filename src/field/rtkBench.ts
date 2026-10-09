@@ -236,7 +236,8 @@ class RtkBench {
     const gtxt = this.rec ? '記錄中……桿子扶好別動！（<kbd class="cap">WASD</kbd> 保持氣泡在圈裡）'
       : this.sol === 'fix' ? '手簿是<b class="g">固定解 FIX</b> 了 → 按 <kbd class="cap cap-wide">Space</kbd> 開始記錄'
         : '用 <kbd class="cap">WASD</kbd> 把氣泡壓在中間圈裡，等手簿跳成<b class="g">固定解 FIX</b>';
-    if (g.innerHTML !== gtxt) g.innerHTML = gtxt;
+    const gfix = ui.fixText(gtxt);
+    if (g.innerHTML !== gfix) g.innerHTML = gfix;
     const solEl = r.querySelector('.rs-sol') as HTMLElement;
     const lab: Record<Sol, string> = { none: '搜尋衛星中…', single: '單點定位', float: '浮動解 FLOAT', fix: '固定解 FIX' };
     solEl.textContent = lab[this.sol];
@@ -247,7 +248,7 @@ class RtkBench {
     (r.querySelector('.rs-h') as HTMLElement).textContent = cm(this.h);
     (r.querySelector('.rs-v') as HTMLElement).textContent = cm(this.v);
     const n = this.rec ? this.rec.n + this.rec.t / 3 : 0;
-    (r.querySelector('.rs-rec-t') as HTMLElement).textContent = this.rec ? `記錄中 ${Math.min(3, this.rec.n + 1)} / 3` : '按 Space 開始記錄';
+    (r.querySelector('.rs-rec-t') as HTMLElement).textContent = this.rec ? `記錄中 ${Math.min(3, this.rec.n + 1)} / 3` : ui.fixText('按 Space 開始記錄');
     (r.querySelector('.rs-rec em') as HTMLElement).style.width = `${n / 3 * 100}%`;
   }
 

@@ -513,10 +513,10 @@ class GcpBench {
       nail: this.bent ? '釘子歪了！按 <kbd class="cap">R</kbd> 拔起來換一根' : '指針走到<b class="g">綠色</b>那格時按 <kbd class="cap cap-wide">Space</kbd> 敲下去',
     };
     if (!this.banner) { this.banner = el('div', 'big-guide gcpb-banner'); this.root.appendChild(this.banner); }
-    this.banner.innerHTML = `<div class="bg-steps">${order.map(([k, n], i) => `<span class="${k === cur ? 'on' : order.findIndex(o => o[0] === cur) > i ? 'done' : ''}">${i + 1} ${n}</span>`).join('<i>→</i>')}</div><div class="bg-main">${big[cur] || '……'}</div>`;
+    this.banner.innerHTML = ui.fixText(`<div class="bg-steps">${order.map(([k, n], i) => `<span class="${k === cur ? 'on' : order.findIndex(o => o[0] === cur) > i ? 'done' : ''}">${i + 1} ${n}</span>`).join('<i>→</i>')}</div><div class="bg-main">${big[cur] || '……'}</div>`);
     if (!this.card) { this.card = el('div', 'bench-card paper gcpb-card'); this.root.appendChild(this.card); }
     const mb = isMobile() ? this.mobileBar() : '';
-    this.card.innerHTML = `<div class="bench-head"><h3>${title}</h3><span class="bench-keys">${isMobile() ? '' : keys}</span></div><div class="bench-body">${body}</div>${mb}`;
+    this.card.innerHTML = ui.fixText(`<div class="bench-head"><h3>${title}</h3><span class="bench-keys">${isMobile() ? '' : keys}</span></div><div class="bench-body">${body}</div>`) + mb;
     if (mb) {
       this.card.querySelectorAll<HTMLButtonElement>('.gcpb-mbar button[data-c]').forEach(b => {
         b.onclick = (ev) => { ev.stopPropagation(); this.fakeKey(b.dataset.c!); };

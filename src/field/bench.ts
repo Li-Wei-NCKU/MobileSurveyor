@@ -255,6 +255,7 @@ class InstrumentBench {
   }
 
   private card(title: string, body: string, keys: string) {
+    body = ui.fixText(body); keys = ui.fixText(keys);
     const c = el('div', 'bench-card paper', `
       <div class="bench-head"><h3>${title}</h3><span class="bench-keys">${keys}</span></div>
       <div class="bench-body">${body}</div>`);

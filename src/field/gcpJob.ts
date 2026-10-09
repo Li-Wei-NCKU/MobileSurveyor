@@ -935,7 +935,8 @@ export class GcpJob {
     this.phoneHid = cam.children.filter(c => c.visible); this.phoneHid.forEach(c => { c.visible = false; });
     const d = document.createElement('div');
     d.className = 'phone-view';
-    d.innerHTML = '<div class="pv-frame"><i class="pv-c tl"></i><i class="pv-c tr"></i><i class="pv-c bl"></i><i class="pv-c br"></i><b class="pv-cross"></b></div><div class="big-guide"><b>點位照片</b>　近照：站在標旁邊、標放在畫面中間按 <kbd class="cap">Space</kbd><br>遠照（2 張）：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等參考地物</div><div class="pv-bar"><span class="pv-rec">● 點位照片</span><span class="pv-keys">Space 拍照　C 收起手機</span></div>';
+    const mob = !!(window as AnyObj).__mobile;
+    d.innerHTML = `<div class="pv-frame"><i class="pv-c tl"></i><i class="pv-c tr"></i><i class="pv-c bl"></i><i class="pv-c br"></i><b class="pv-cross"></b></div><div class="big-guide"><b>點位照片</b>　近照：站在標旁邊、標放在畫面中間${mob ? '再點「拍照」' : '按 <kbd class="cap">Space</kbd>'}<br>遠照（2 張）：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等參考地物</div><div class="pv-bar"><span class="pv-rec">● 點位照片</span><span class="pv-keys">${mob ? '下面可以「拍照」或「收起手機」' : 'Space 拍照　C 收起手機'}</span></div>`;
     document.body.appendChild(d);
     document.body.classList.add('phone-cam');
     this.phone = d;

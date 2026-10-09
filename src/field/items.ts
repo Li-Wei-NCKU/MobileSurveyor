@@ -39,7 +39,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   template:     { id: 'template', name: '航測標模板', w: 1, d: 2, heavy: false, kind: 'box', color: 0xc99a62, note: '1.2 m 折疊木框，加一片擋白格用的遮板。' },
   rtk:          { id: 'rtk', name: 'RTK 移動站', w: 1, d: 2, heavy: false, kind: 'pole', color: 0xf2b705, note: '對中桿、接收儀、手簿一組。' },
   battery:      { id: 'battery', name: '無人機電池箱', w: 1, d: 1, heavy: false, kind: 'case', color: 0x37474f, note: '三顆電池，昨晚充飽了（應該吧）。' },
-  plate:        { id: 'plate', name: '尺墊（兩個）', w: 1, d: 1, heavy: true, kind: 'box', color: 0x3a3f47, note: '鑄鐵尺墊，轉點時墊在標尺底下，免得尺陷進土裡。' },
+  plate:        { id: 'plate', name: '鐵墊（兩個）', w: 1, d: 1, heavy: true, kind: 'box', color: 0x3a3f47, note: '鑄鐵的鐵墊，轉點時墊在標尺底下，免得尺陷進土裡。' },
 };
 
 /** GNSS 靜態觀測必帶設備 */

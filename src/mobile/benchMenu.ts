@@ -80,6 +80,9 @@ class BenchMenu {
     g.recalculateTribrachPhysics?.();
     const np = !!opts.noPlummet;
     let warned = false;
+    // 第一次定心定平：在旋鈕和對點器上放動畫提示
+    let hint = true;
+    try { hint = !localStorage.getItem('ks-m-tri-hint'); } catch { /* 無痕模式 */ }
 
     // ---- 斜看視角的基座：盤面 + 三角分布的腳螺旋 + 圓水準器 ----
     const PK = 0.42;                      // 斜看時 y 方向的壓縮
@@ -112,6 +115,12 @@ class BenchMenu {
           <ellipse class="v-bub" cx="170" cy="88" rx="7.5" ry="3.7"/>
         </g>
         ${knobSvg('A')}${knobSvg('B')}
+        ${hint ? `<g class="m-tri-tip" aria-hidden="true">
+          <ellipse cx="${KN.A.x}" cy="${KN.A.y}" rx="34" ry="14.3" class="tip-ring"/>
+          <circle r="6" class="tip-dot"><animateMotion dur="2.4s" repeatCount="indefinite"
+            path="M ${KN.A.x + 34} ${KN.A.y} A 34 14.3 0 1 1 ${KN.A.x - 34} ${KN.A.y} A 34 14.3 0 1 1 ${KN.A.x + 34} ${KN.A.y}"/></circle>
+          <text x="${KN.A.x}" y="${KN.A.y + 42}" class="tip-text">手指轉圈</text>
+        </g>` : ''}
       </svg>
       <div class="m-tri-hint">手指在 A／B／C 旋鈕上轉圈＝轉動腳螺旋</div>
     </div>`;
@@ -123,6 +132,10 @@ class BenchMenu {
         <circle cx="60" cy="60" r="${0.10 * S}" class="tol"/>
         <path d="M60 6V52M60 68V114M6 60H52M68 60H112" class="ret"/>
         <circle class="mark" ${dot(g.centerX, g.centerY)} r="5.5"/>
+        ${hint ? `<g class="m-tri-tip" aria-hidden="true">
+          <path d="M86 36 L44 78" class="tip-path"/>
+          <circle r="7" class="tip-dot"><animateMotion dur="2s" repeatCount="indefinite" keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear" path="M 86 36 L 44 78"/></circle>
+        </g>` : ''}
       </svg><figcaption>光學對點器<b class="v-cerr">${g.currentCenterErrorMm} mm</b><small>拖曳＝平移基座</small></figcaption></figure>`}
       <figure><svg viewBox="0 0 120 120" class="m-pip vial">
         <circle cx="60" cy="60" r="56" class="bg"/>
@@ -180,7 +193,14 @@ class BenchMenu {
 
     // ---- 直接轉旋鈕：手指繞著旋鈕畫圈 ----
     let sound = 0;
+    const dropHint = () => {
+      if (!hint) return;
+      hint = false;
+      try { localStorage.setItem('ks-m-tri-hint', '1'); } catch { /* 無痕模式 */ }
+      root.querySelectorAll('.m-tri-tip').forEach(e => e.remove());
+    };
     const turn = (k: 'A' | 'B' | 'C', deg: number) => {
+      dropHint();
       g[`screw${k}`] = (g[`screw${k}`] || 0) + deg / 36;   // 畫面轉多少，螺旋就轉多少
       g.recalculateTribrachPhysics();
       sound += Math.abs(deg);
@@ -196,7 +216,7 @@ class BenchMenu {
       };
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
-        on = true; last = ang(e); el.classList.add('hold');
+        on = true; last = ang(e); el.classList.add('hold'); dropHint();
         try { el.setPointerCapture(e.pointerId); } catch { /* 合成事件沒有真的指標 */ }
       });
       el.addEventListener('pointermove', (e) => {
@@ -305,7 +325,7 @@ class BenchMenu {
       m.root.classList.remove('grid2', 'grid4');
       m.setButtons(shuffle([
         { id: 'center', text: '標石中心的十字點' },
-        { id: 'edge', text: '標石頂面的邊緣', sub: '比較好壓' },
+        { id: 'edge', text: '標石頂面的邊緣' },
         { id: 'ground', text: '標石旁邊的地面' },
       ]), (id) => { zeroId = id; zeroBias = id === 'center' ? 0 : id === 'edge' ? 0.012 : 0.028; step2(); });
     };
@@ -313,7 +333,7 @@ class BenchMenu {
       m.setTitle('量天線斜高', '第 2 步：捲尺往上拉到天線的哪裡？');
       m.setPanel('<div class="m-illus">天線盤側面有一道黃色的量高缺口（ARP 基準緣）、上面是天線頂、下面是底盤外緣。</div>');
       m.setButtons(shuffle([
-        { id: 'notch', text: '黃色量高缺口', sub: '天線盤側面的刻線' },
+        { id: 'notch', text: '黃色量高缺口' },
         { id: 'top', text: '天線的頂面' },
         { id: 'rim', text: '底盤的外緣' },
       ]), (id) => { topId = id; topBias = id === 'notch' ? 0 : id === 'top' ? 0.055 : -0.018; step3(); });
@@ -376,7 +396,7 @@ class BenchMenu {
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       m.setButtons([
         { id: 'ok', text: '記錄', kind: 'primary' },
-        { id: 'redo', text: '重拉一次', kind: 'ghost', sub: '回到第 1 步' },
+        { id: 'redo', text: '重拉一次', kind: 'ghost' },
       ], (id) => { if (id === 'ok') submit(); else step1(); });
       setTimeout(() => inp.focus(), 300);
     };

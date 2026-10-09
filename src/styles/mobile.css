@@ -321,10 +321,15 @@ kbd.cap { display: none !important; }
 .m-tribrach .m-pip .mark.ok, .m-tribrach .m-pip .bubble.ok { stroke: #15803d; }
 
 /* ---------- 望遠鏡 (第二天) ---------- */
-.scope-touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
-.scope-card { z-index: 2; }
-body.scope-active .scope-focus { pointer-events: auto; left: 10px; }
-body.scope-active .scope-focus .sf-bar { width: 26px; height: 34vh; touch-action: none; }
+.scope-touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; z-index: 1; }
+.scope-card { z-index: 3; }
+/* 調焦尺要在拖曳層上面，不然手指都被拖曳層吃掉 (調焦會沒反應) */
+body.scope-active .scope-focus { pointer-events: auto; left: 10px; z-index: 4; }
+body.scope-active .scope-focus span { padding: 2px 8px; border-radius: 8px; background: rgba(8,14,22,.6); }
+body.scope-active .scope-focus .sf-bar { width: 34px; height: 38vh; touch-action: none; border-width: 2px; }
+body.scope-active .scope-focus .sf-bar::before { content: '近'; position: absolute; left: 50%; top: -16px; transform: translateX(-50%); font: 700 11px var(--font-ui); color: #94a3b8; }
+body.scope-active .scope-focus .sf-bar::after { content: '遠'; position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%); font: 700 11px var(--font-ui); color: #94a3b8; }
+body.scope-active .scope-focus .sf-bar i { left: -7px; width: 48px; height: 7px; }
 .scope-mbar { display: flex; gap: 8px; margin-top: 8px; }
 .sm-btn { flex: 1; min-height: 48px; padding: 8px 10px; border-radius: 12px; border: 1.5px solid rgba(31,45,61,.35); background: #fff; color: var(--ink); font: 800 15px var(--font-ui); }
 .sm-btn.primary { background: var(--survey-yellow); border-color: #a07400; }
@@ -407,3 +412,44 @@ body.gcp-bench { touch-action: none; }
 .m-tbtn.primary { background: var(--survey-yellow); border-color: #a07400; box-shadow: 0 3px 0 #a07400; }
 .m-tbtn.off { opacity: .45; }
 .m-tbtn.ghost { flex: 0 0 38%; background: transparent; font-weight: 700; }
+
+/* 第一次定心定平的動畫提示 */
+.m-tri-tip { pointer-events: none; }
+.m-tri-tip .tip-ring { fill: none; stroke: #f2b705; stroke-width: 2.5; stroke-dasharray: 7 7; opacity: .9; }
+.m-tri-tip .tip-path { fill: none; stroke: #f2b705; stroke-width: 3; stroke-dasharray: 7 7; opacity: .9; }
+.m-tri-tip .tip-dot { fill: #f2b705; stroke: #7a5600; stroke-width: 1.5; }
+.m-tri-tip .tip-text { fill: #a07400; font: 800 11px var(--font-ui); text-anchor: middle; }
+.m-pip .m-tri-tip .tip-dot { fill: #f2b705; stroke: #fff; stroke-width: 2; }
+
+/* ---------- 中暑 ---------- */
+.m-heat { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .8s ease;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 32%, rgba(32,12,0,.55) 78%, rgba(18,6,0,.85) 100%); }
+body.heat1 .m-heat { opacity: .85; }
+body.heat2 .m-heat { opacity: 1; background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 20%, rgba(40,10,0,.7) 68%, rgba(16,4,0,.95) 100%); animation: m-heatpulse 2.6s ease-in-out infinite; }
+@keyframes m-heatpulse { 50% { opacity: .78; } }
+body.heat1 .m-hint, body.heat1 .m-goal { filter: saturate(.85); }
+
+/* ---------- 連點衝刺 (阿黃) ---------- */
+.m-dash {
+  position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0 14px; pointer-events: none;
+}
+.m-dash-top {
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-radius: 999px;
+  background: rgba(140, 20, 20, .92); color: #fff; font: 800 15px var(--font-ui);
+  box-shadow: 0 6px 18px rgba(0,0,0,.3);
+}
+.m-dash-left { font-weight: 700; font-size: 13px; opacity: .9; }
+.m-dash-bar { width: min(420px, 86vw); height: 10px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; }
+.m-dash-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #facc15, #16a34a); transition: width .08s linear; }
+.m-dash-go {
+  pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  width: 150px; height: 150px; border-radius: 50%; border: 5px solid #7f1d1d;
+  background: radial-gradient(circle at 38% 32%, #fde047, #f59e0b 62%, #d97706);
+  color: #3b1d00; font: 900 34px/1 var(--font-ui); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px; box-shadow: 0 8px 22px rgba(0,0,0,.35);
+}
+.m-dash-go small { font: 800 13px var(--font-ui); opacity: .72; }
+.m-dash-go.hit { animation: m-dash-pop .13s ease-out; }
+@keyframes m-dash-pop { from { transform: scale(.88); } to { transform: scale(1); } }
