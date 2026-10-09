@@ -275,6 +275,7 @@ export class FieldDay {
     });
     this.nav.setRoute(ph === 'prep' || ph === 'toSite' ? this.J.route : ph === 'packup' || ph === 'return' ? this.J.back : null);
     if (!['prep', 'toSite', 'packup', 'return'].includes(ph)) ui.setNav(null);
+    if (ph === 'prep') (this.sub as AnyObj)?.onPrep?.();
     if (ph === 'toSite') this.destArrow(this.J.park.x, this.J.park.z, '目的地：現場停車處');
     if (ph === 'return') this.destArrow(TRUCK_HOME.x, TRUCK_HOME.z, '目的地：公司停車格');
   }
@@ -286,7 +287,20 @@ export class FieldDay {
     a.visible = true;
   }
 
+  /** 到現場先清點一次必帶設備：少了什麼當場就知道，指引才會叫你開車回公司拿 */
+  private checkRequired() {
+    const S = this.J.site;
+    const here = (it: ItemId) => this.carrying === it || this.extraCarry === it || this.grid.has(it)
+      || this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
+    const miss = this.J.required.filter(it => !here(it) && !this.m.forgot.has(it));
+    if (!miss.length) return;
+    miss.forEach(it => this.m.forgot.add(it));
+    sfx.error();
+    ui.toast(`清點了一下……${miss.map(i => ITEMS[i].name).join('、')}沒帶到！只好開車回公司拿。`, 'bad', 5200);
+  }
+
   private startSite() {
+    this.checkRequired();
     if (this.sub) { this.sub.startSite(); this.setPhase('site'); this.sub.refreshHint(); this.syncInteractives(); return; }
     const p = this.app.player;
     const pos = p.position.clone(), eul = p.euler.clone();
@@ -842,6 +856,9 @@ export class FieldDay {
 
     if (this.phase === 'prep') {
       if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+      // 交給學弟裝車而且沒自己檢查過：就照他說的「都裝好了」，少了什麼到現場才會知道
+      const sub = this.sub as AnyObj | null;
+      if (sub?.asstLoaded && !sub?.asstChecked) return { ...door(), label: '學弟說都裝好了，上車出發', reach: 1.3 };
       // 還沒裝車的必帶設備：指到它現在放的架子
       for (const it of this.J.required) {
         if (this.grid.has(it)) continue;
@@ -1192,17 +1209,6 @@ export class FieldDay {
     if (this.yardItemPos(item)) return;
     const spot = this.shelfSpots.find(s => s.item === item && s.uid === null) || this.shelfSpots.find(s => s.uid === null);
     if (spot) spot.uid = this.spawnGround(item, spot.pos, spot.rotY);
-  }
-
-  /** 學弟自己從後斗拿一件 (不經過玩家的手)：拿到就把它從後斗移除 */
-  asstTakeFromTrunk(item: ItemId): boolean {
-    const pl = this.grid.placed.find(p => p.item === item);
-    if (!pl) return false;
-    this.truck.tailTarget = 1;
-    this.grid.remove(pl);
-    const mdl = this.trunkMeshes.get(pl.uid);
-    if (mdl) { this.truck.bedItems.remove(mdl); this.unregister(mdl); this.trunkMeshes.delete(pl.uid); }
-    return true;
   }
 
   private takeFromTrunk(uid: number) {
