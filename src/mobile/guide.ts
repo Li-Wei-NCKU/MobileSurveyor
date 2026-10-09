@@ -65,7 +65,7 @@ export class MobileGuide {
     const g = this.goal;
     if (g && !this.told) {
       this.told = true;
-      toast('畫面下方的黃色指引會說下一步要去哪，點它就會自動走過去。', 'info', 5200);
+      toast('畫面下方的指引會說下一步要去哪，點它就會自動走過去。', 'info', 5200);
     }
     // 正在走去某個地方時，交給走路提示 (m-walkchip)，兩個不要疊在一起
     const walking = !!this.player.target?.label;

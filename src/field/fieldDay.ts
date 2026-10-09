@@ -27,6 +27,9 @@ import { showEnding } from './ending';
 import { LevelJob } from './levelJob';
 import { GcpJob } from './gcpJob';
 
+/** 手機版任務指引的目標 */
+export interface GuideTarget { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D; item?: ItemId }
+
 export type Phase = 'brief' | 'prep' | 'toSite' | 'site' | 'observe' | 'packup' | 'return' | 'done';
 
 export interface GroundItem { uid: number; item: ItemId; obj: THREE.Group }
@@ -731,11 +734,33 @@ export class FieldDay {
 
   // ---------- 手機版任務指引 ----------
   /** 下一步要去哪、做什麼；手機版用來畫目標圈與「前往」提示 */
-  guideTarget(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
+  guideTarget(): GuideTarget | null {
+    const t = this.guideTargetRaw();
+    if (!t || this.inTruck) return t;
+    // 目標太遠 (而且車就在旁邊)：提醒開車過去，不要用走的
+    const p = this.app.player.position;
+    const d = Math.hypot(p.x - t.x, p.z - t.z);
+    const tk = this.truck.pos;
+    const dTruck = Math.hypot(p.x - tk.x, p.z - tk.z);
+    if (d > 70 && dTruck < 45 && dTruck < d) {
+      const toYard = Math.hypot(t.x - YARD.x, t.z - YARD.z) < 45;
+      const dr = this.guideDoor();
+      return { ...dr, label: toYard ? (t.item ? `開車回公司拿${ITEMS[t.item].name}` : '開車回公司') : '開車回現場', reach: 1.3 };
+    }
+    return t;
+  }
+
+  /** 車門旁邊 (上車用) */
+  private guideDoor() {
+    const t = this.truck.toWorld(0.95, 0, 2.1);
+    return { x: t.x, z: t.z, obj: this.truck.cabHit as THREE.Object3D };
+  }
+
+  private guideTargetRaw(): GuideTarget | null {
     if (this.inTruck || this.phase === 'brief' || this.phase === 'done') return null;
     const nm = (i: ItemId) => ITEMS[i].name;
     const tail = () => { const t = this.truck.toWorld(-3.6, 0, 0); return { x: t.x, z: t.z, obj: this.truck.tailHit as THREE.Object3D }; };
-    const door = () => { const t = this.truck.toWorld(0.95, 0, 2.1); return { x: t.x, z: t.z, obj: this.truck.cabHit as THREE.Object3D }; };
+    const door = () => this.guideDoor();
     const find = (f: (o: THREE.Object3D) => boolean) => this.app.sceneManager.interactiveObjects.find(f);
 
     // 東西忘在公司：指引開車回去拿 (m.forgot 是遊戲自己記下來的)
@@ -788,11 +813,16 @@ export class FieldDay {
       const monObj = find(o => o.userData?.type === 'monument' && String(o.userData.label || '').includes('CKSV'));
       const instObj = find(o => o.userData?.type === 'instrument' && o.userData.instrumentType === 'gnss');
       const mon = { x: CKSV.x, z: CKSV.z, obj: instObj || monObj };
-      const fetch = (it: ItemId) => {
+      const S = this.J.site;
+      const fetch = (it: ItemId): GuideTarget | null => {
         if (this.carrying === it) return null;
-        const g = this.ground.find(x => x.item === it);
-        if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: `拿起${nm(it)}`, reach: 1.3, obj: g.obj };
-        return { ...tail(), label: `從後斗拿${nm(it)}`, reach: 1.4 };
+        const near = this.ground.find(x => x.item === it && Math.hypot(x.obj.position.x - S.x, x.obj.position.z - S.z) < S.r);
+        if (near) return { x: near.obj.position.x, z: near.obj.position.z, label: `拿起${nm(it)}`, reach: 1.3, obj: near.obj, item: it };
+        if (this.grid.has(it)) return { ...tail(), label: `從後斗拿${nm(it)}`, reach: 1.4, item: it };
+        // 不在現場也不在後斗 = 忘在公司了
+        const far = this.ground.find(x => x.item === it);
+        if (far) return { x: far.obj.position.x, z: far.obj.position.z - 2.4, label: `拿${nm(it)}（忘了帶）`, reach: 1.1, obj: far.obj, item: it };
+        return { ...door(), label: `忘了帶${nm(it)}，開車回公司拿`, reach: 1.3, item: it };
       };
       if (!this.tripodSet) return fetch('tripod') || { ...mon, label: '在 CKSV 控制點上架三腳架', reach: 1.6 };
       if (!this.tribrachOn) return fetch('tribrach') || { ...mon, label: '把基座裝上腳架', reach: 1.6 };
