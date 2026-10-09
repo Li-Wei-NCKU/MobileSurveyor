@@ -1,0 +1,1465 @@
+/* 鍵盤測量員 (Keyboard Surveyor) - 核心樣式表
+ * 視覺概念：兩種實體材質 —— 「鍵帽」(所有按鍵提示) 與「外業手簿」(任務面板)。
+ * 其餘 HUD 保持安靜的深色玻璃，避免搶走 3D 場景。
+ */
+:root {
+    /* 新識別色票 */
+    --survey-yellow: #e9b308;   /* 腳架黃：品牌鍵帽、手簿封面 */
+    --flag-pink: #ff2e88;       /* 測量標示帶：目前進行中的步驟 */
+    --paper: #edefe3;           /* 防水手簿紙 */
+    --paper-grid: rgba(98, 128, 104, 0.18);
+    --ink: #1f2d3d;             /* 手簿墨色 */
+    --ink-soft: #5b6a78;
+    --done-green: #2e7d4f;
+    --glass: rgba(20, 29, 38, 0.78);
+    --glass-line: rgba(255, 255, 255, 0.14);
+
+    /* 既有變數 (彈窗等仍沿用) */
+    --bg-dark: #12151a;
+    --bg-panel: rgba(22, 27, 34, 0.94);
+    --bg-panel-solid: #1b212c;
+    --accent-yellow: #e9b308;
+    --accent-orange: #ff5722;
+    --accent-green: #10b981;
+    --accent-cyan: #06b6d4;
+    --accent-red: #ef4444;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+    --border-tech: rgba(233, 179, 8, 0.35);
+    --border-light: rgba(255, 255, 255, 0.12);
+    --font-mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+    --font-ui: 'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', system-ui, sans-serif;
+    --font-hand: 'LXGW WenKai TC', 'DFKai-SB', 'BiauKai', 'KaiTi', serif;
+    --bubble-liquid: #a7f3d0;
+    --bubble-air: #059669;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-dark);
+    font-family: var(--font-ui);
+    color: var(--text-main);
+}
+
+#canvas-container {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+/* =================================================== */
+/* 鍵帽 (keycap) —— 全遊戲共用的按鍵提示              */
+/* =================================================== */
+.cap,
+.key-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 7px 2px;
+    font: 700 12px/1 var(--font-ui);
+    color: var(--ink);
+    background: linear-gradient(180deg, #fbfbf6 0%, #e6e6dd 100%);
+    border: 1px solid #b4b4a8;
+    border-radius: 5px;
+    box-shadow:
+        inset 0 -3px 0 rgba(0, 0, 0, 0.12),
+        0 2px 0 #8f8f84,
+        0 3px 6px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.key-badge { font-size: 11px; height: 22px; min-width: 22px; padding: 0 6px 2px; }
+.cap-wide { min-width: 44px; }
+.cap-accent,
+.key-badge.key-accent {
+    background: linear-gradient(180deg, #ffd23f 0%, #e3a904 100%);
+    border-color: #b98a00;
+    box-shadow:
+        inset 0 -3px 0 rgba(120, 80, 0, 0.25),
+        0 2px 0 #a07400,
+        0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* =================================================== */
+/* 頂部 HUD                                             */
+/* =================================================== */
+#top-hud {
+    position: absolute;
+    top: 14px;
+    left: 20px;
+    right: 20px;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    pointer-events: none;
+}
+
+.brand {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+}
+.cap-brand {
+    width: 38px;
+    height: 38px;
+    font-size: 19px;
+    font-weight: 900;
+    border-radius: 7px;
+    box-shadow:
+        inset 0 -4px 0 rgba(0, 0, 0, 0.13),
+        0 3px 0 #8f8f84,
+        0 6px 12px rgba(0, 0, 0, 0.4);
+}
+.cap-brand.cap-accent {
+    box-shadow:
+        inset 0 -4px 0 rgba(120, 80, 0, 0.25),
+        0 3px 0 #a07400,
+        0 6px 12px rgba(0, 0, 0, 0.4);
+}
+.brand .cap-brand:nth-child(1) { transform: translateY(-2px); }
+.brand .cap-brand:nth-child(4) { transform: translateY(-1px); }
+.brand-ver {
+    margin-left: 6px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* 任務導線 (traverse)：四個測站以導線相連 */
+.traverse {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-line);
+    border-radius: 10px;
+    padding: 8px 18px 7px;
+    pointer-events: auto;
+}
+.traverse ol {
+    list-style: none;
+    display: flex;
+    gap: 0;
+}
+.traverse li {
+    position: relative;
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+}
+/* 導線邊 */
+.traverse li + li::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: calc(50% + 12px);
+    width: calc(100% - 24px);
+    border-top: 2px dashed rgba(255, 255, 255, 0.3);
+}
+.traverse li.done + li::before { border-top-style: solid; border-color: rgba(255, 255, 255, 0.75); }
+/* 三角點符號 △ */
+.stn {
+    width: 18px;
+    height: 16px;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    background: rgba(255, 255, 255, 0.35);
+    position: relative;
+}
+.stn::after {
+    content: '';
+    position: absolute;
+    inset: 4px 4px 2px;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    background: rgba(20, 29, 38, 0.95);
+}
+.traverse li.done { color: rgba(255, 255, 255, 0.85); }
+.traverse li.done .stn { background: #fff; }
+.traverse li.done .stn::after { background: #fff; }
+.traverse li.current { color: #fff; font-weight: 700; }
+.traverse li.current .stn { background: var(--survey-yellow); }
+.traverse li.current .stn::after { background: var(--survey-yellow); }
+/* 目前測站插上粉紅標示帶 */
+.traverse li.current::after {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: calc(50% + 6px);
+    width: 12px;
+    height: 8px;
+    background: var(--flag-pink);
+    clip-path: polygon(0 0, 100% 30%, 0 100%);
+    transform-origin: left center;
+    animation: flag-wave 1.6s ease-in-out infinite;
+}
+@keyframes flag-wave {
+    0%, 100% { transform: scaleX(1) skewY(0deg); }
+    50% { transform: scaleX(0.8) skewY(8deg); }
+}
+
+.hud-right {
+    justify-self: end;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+.hud-actions {
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+}
+.hud-key {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 6px 7px;
+    font: 500 13px var(--font-ui);
+    color: #fff;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-line);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.hud-key:hover { background: rgba(30, 44, 58, 0.92); border-color: rgba(233, 179, 8, 0.6); }
+.hud-key:active .cap { transform: translateY(2px); box-shadow: inset 0 -1px 0 rgba(0,0,0,.12), 0 0 0 #8f8f84, 0 1px 2px rgba(0,0,0,.3); }
+.hud-key:focus-visible { outline: 2px solid var(--survey-yellow); outline-offset: 2px; }
+.hud-key.is-off .hud-key-label { color: rgba(255, 255, 255, 0.55); text-decoration: line-through; }
+
+.lock-status {
+    font-size: 12px;
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(20, 29, 38, 0.6);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.lock-status::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: #9ca3af;
+    vertical-align: 1px;
+}
+.lock-status.is-locked::before { background: #34d399; box-shadow: 0 0 6px #34d399; }
+
+/* 舊版 HUD 類別 (部分彈窗仍使用) */
+.hud-pill {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-line);
+    border-radius: 8px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: auto;
+}
+.btn-hud {
+    background: var(--glass);
+    border: 1px solid var(--glass-line);
+    color: var(--text-main);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font: 600 13px var(--font-ui);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-hud:hover { background: rgba(233, 179, 8, 0.18); border-color: var(--survey-yellow); color: #fff; }
+.btn-hud:focus-visible { outline: 2px solid var(--survey-yellow); outline-offset: 2px; }
+.btn-hud.btn-primary { background: var(--survey-yellow); color: var(--ink); border: none; }
+.btn-hud.btn-primary:hover { background: #ffd23f; color: var(--ink); }
+
+/* =================================================== */
+/* 準心與互動提示                                       */
+/* =================================================== */
+#reticle-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 22px;
+    height: 22px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 5;
+    transition: transform 0.15s ease;
+}
+/* 測量望遠鏡十字絲樣式：中斷十字 + 中心點 */
+#reticle-crosshair::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(#fff, #fff) center top / 2px 7px no-repeat,
+        linear-gradient(#fff, #fff) center bottom / 2px 7px no-repeat,
+        linear-gradient(#fff, #fff) left center / 7px 2px no-repeat,
+        linear-gradient(#fff, #fff) right center / 7px 2px no-repeat;
+    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
+}
+#reticle-crosshair::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    box-shadow: 0 0 2px #000;
+}
+#reticle-crosshair.active { transform: translate(-50%, -50%) scale(1.25) rotate(45deg); }
+#reticle-crosshair.active::before {
+    background:
+        linear-gradient(var(--survey-yellow), var(--survey-yellow)) center top / 2px 7px no-repeat,
+        linear-gradient(var(--survey-yellow), var(--survey-yellow)) center bottom / 2px 7px no-repeat,
+        linear-gradient(var(--survey-yellow), var(--survey-yellow)) left center / 7px 2px no-repeat,
+        linear-gradient(var(--survey-yellow), var(--survey-yellow)) right center / 7px 2px no-repeat;
+}
+
+#interaction-prompt {
+    position: absolute;
+    top: calc(50% + 30px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px 6px 6px;
+    background: var(--glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(233, 179, 8, 0.55);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 5;
+}
+#interaction-prompt .cap {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+    animation: cap-press 1.4s ease-in-out infinite;
+}
+@keyframes cap-press {
+    0%, 70%, 100% { transform: translateY(0); }
+    80% { transform: translateY(2px); box-shadow: inset 0 -1px 0 rgba(120,80,0,.25), 0 0 0 #a07400, 0 1px 2px rgba(0,0,0,.3); }
+}
+
+/* =================================================== */
+/* 外業手簿 (任務面板)                                  */
+/* =================================================== */
+.fieldbook {
+    position: absolute;
+    top: 72px;
+    left: 20px;
+    width: 330px;
+    z-index: 10;
+    border-radius: 4px 10px 10px 4px;
+    overflow: hidden;
+    box-shadow:
+        -4px 0 0 #b98a00,
+        0 10px 28px rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
+}
+.fb-cover {
+    padding: 10px 16px 11px 18px;
+    background: var(--survey-yellow);
+    color: var(--ink);
+    border-bottom: 2px solid #b98a00;
+}
+.fb-print {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    color: rgba(31, 45, 61, 0.65);
+}
+.fb-cover h3 {
+    margin-top: 2px;
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1.35;
+    color: var(--ink);
+}
+.fb-page {
+    position: relative;
+    padding: 12px 16px 14px 18px;
+    background-color: var(--paper);
+    background-image:
+        linear-gradient(var(--paper-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--paper-grid) 1px, transparent 1px);
+    background-size: 14px 14px;
+    background-position: -1px -1px;
+    color: var(--ink);
+}
+/* 左側裝訂紅線 */
+.fb-page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 38px;
+    border-left: 1.5px solid rgba(214, 40, 40, 0.35);
+}
+.task-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.task-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    column-gap: 14px;
+    align-items: start;
+    padding: 4px 6px 4px 0;
+    font-family: var(--font-hand);
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+}
+.task-no {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: right;
+    padding-top: 2px;
+    color: var(--ink-soft);
+}
+.task-item.active {
+    color: var(--ink);
+    font-weight: 700;
+    background: rgba(255, 46, 136, 0.09);
+    border-radius: 0 6px 6px 0;
+}
+/* 目前步驟：左側綁上粉紅標示帶 */
+.task-item.active::before {
+    content: '';
+    position: absolute;
+    left: -18px;
+    top: 3px;
+    width: 14px;
+    height: calc(100% - 6px);
+    min-height: 18px;
+    background: var(--flag-pink);
+    clip-path: polygon(0 0, 100% 0, 70% 50%, 100% 100%, 0 100%);
+}
+.task-item.active .task-no { color: var(--flag-pink); }
+.task-item.completed { color: rgba(31, 45, 61, 0.5); }
+.task-item.completed .task-text {
+    text-decoration: line-through;
+    text-decoration-color: rgba(46, 125, 79, 0.85);
+    text-decoration-thickness: 2px;
+}
+.task-item.completed .task-no { color: var(--done-green); }
+.task-item.completed .task-no::before { content: '✓ '; }
+
+.fb-note {
+    margin-top: 12px;
+    padding-top: 9px;
+    border-top: 1.5px dashed rgba(31, 45, 61, 0.25);
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    column-gap: 14px;
+}
+.fb-note-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #b42318;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.2em;
+    justify-self: end;
+}
+.fb-note p {
+    font-family: var(--font-hand);
+    font-size: 14px;
+    line-height: 1.5;
+    color: #24477a;
+}
+
+/* =================================================== */
+/* 底部操作鍵位                                         */
+/* =================================================== */
+#bottom-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    padding: 10px 22px 9px;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-line);
+    border-radius: 14px;
+    pointer-events: none;
+}
+.ctrl {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.ctrl-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.82);
+}
+.wasd {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+.wasd .cap,
+#bottom-controls .cap { min-width: 24px; height: 24px; font-size: 11px; }
+#bottom-controls .cap-wide { min-width: 48px; }
+.wasd-row { display: flex; gap: 3px; }
+.mouse-glyph {
+    width: 18px;
+    height: 26px;
+    border: 2px solid #f3f4f0;
+    border-radius: 9px;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.mouse-glyph::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 2px;
+    height: 6px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--survey-yellow);
+}
+
+/* 無人機模式：讓位給飛行 HUD */
+body:has(#drone-hud.active) .brand,
+body:has(#drone-hud.active) .hud-right,
+body:has(#drone-hud.active) #bottom-controls { display: none; }
+body:has(#drone-hud.active) .traverse { visibility: hidden; }
+body:has(#drone-hud.active) .fieldbook { top: 104px; width: 300px; opacity: 0.94; }
+
+@media (max-width: 1100px) {
+    .traverse li { width: 76px; font-size: 11px; }
+    .fieldbook { width: 290px; }
+    #bottom-controls { gap: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .traverse li.current::after,
+    #interaction-prompt .cap { animation: none; }
+}
+
+/* =================================================== */
+/* 模態視窗系統 (關卡選單、對心定平、望遠鏡、UAV HUD等) */
+/* =================================================== */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    cursor: default;
+    pointer-events: auto;
+}
+
+.modal-backdrop.show {
+    display: flex;
+}
+
+/* 主關卡選擇器 (Level Select Hub) */
+.level-modal {
+    background: var(--bg-panel-solid);
+    border: 1px solid var(--border-tech);
+    border-radius: 12px;
+    width: 900px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+}
+
+.level-modal-header {
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.level-modal-header h2 {
+    font-size: 22px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.level-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 18px;
+    padding: 24px 28px;
+}
+
+.level-card {
+    background: #151a23;
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.level-card:hover {
+    border-color: var(--accent-yellow);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.2);
+}
+
+.level-card-img {
+    height: 120px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    padding: 12px;
+}
+
+.level-card-img::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(0deg, rgba(21, 26, 35, 1) 0%, rgba(21, 26, 35, 0.2) 100%);
+}
+
+.level-tag {
+    position: relative;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid var(--accent-yellow);
+    color: var(--accent-yellow);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.level-card-body {
+    padding: 16px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.level-card-body h4 {
+    font-size: 16px;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.level-card-body p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-bottom: 12px;
+}
+
+.level-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding-top: 10px;
+}
+
+.badge-score {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--accent-green);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+}
+
+/* =================================================== */
+/* 儀器特寫模擬面板 (Leveling / Optical Modal) */
+/* =================================================== */
+.instrument-modal {
+    background: #181f2b;
+    border: 2px solid #374151;
+    border-radius: 12px;
+    width: 820px;
+    max-width: 95vw;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    color: #fff;
+}
+
+.instrument-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 12px;
+}
+
+.leveling-workspace {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* 鋼捲尺儀器斜高量測特寫面板 */
+.tape-reading-container {
+    display: flex;
+    gap: 20px;
+    align-items: stretch;
+}
+
+.tape-canvas-box {
+    background: #090d16;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px;
+    width: 420px;
+    flex-shrink: 0;
+}
+
+.tape-reading-input {
+    width: 100%;
+    background: #0f172a;
+    border: 2px solid var(--border-tech);
+    color: var(--accent-yellow);
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    padding: 10px 14px;
+    border-radius: 8px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.tape-reading-input:focus {
+    border-color: var(--accent-yellow);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+/* 移除所有數字輸入框的上下調整滾輪按鈕 (No Spinners / No Stepper Buttons) */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none !important; 
+    margin: 0 !important; 
+}
+input[type=number] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+}
+
+/* 扶尺員圓水準氣泡平衡 QTE 鍵盤與方向微調按鈕 */
+.qte-key-btn {
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+    user-select: none;
+}
+.qte-key-btn:hover {
+    background: #334155;
+    border-color: #94a3b8;
+}
+.qte-key-btn.active, .qte-key-btn:active {
+    background: var(--accent-green);
+    color: #0f172a;
+    border-color: #10b981;
+    transform: scale(0.95);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+/* GNSS 強固型外業手簿 (Field Controller PDA) 專業介面 */
+.gnss-pda-frame {
+    background: #090d16;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 8px 32px rgba(0,0,0,0.6);
+}
+
+.gnss-pda-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1e293b;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: #94a3b8;
+    margin-bottom: 12px;
+    border: 1px solid #334155;
+}
+
+.gnss-sat-bars-container {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    height: 36px;
+    padding: 4px 8px;
+    background: #0b1120;
+    border-radius: 6px;
+    border: 1px solid #1e293b;
+}
+
+.gnss-sat-bar {
+    flex: 1;
+    background: #1e293b;
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+}
+
+.gnss-sat-fill {
+    background: linear-gradient(0deg, #10b981, #38bdf8);
+    border-radius: 2px;
+    transition: height 0.2s ease;
+}
+
+/* 模態視窗分頁標籤 (Tabs) */
+.modal-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.modal-tab-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.modal-tab-btn:hover {
+    background: #334155;
+    color: #fff;
+}
+
+.modal-tab-btn.active {
+    background: var(--accent-yellow);
+    color: #000;
+    border-color: var(--accent-yellow);
+}
+
+/* 光學對心器視圖 (Optical Plummet) */
+.plummet-panel {
+    background: #0f141d;
+    border: 1px solid #2d3748;
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.plummet-viewfinder {
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    border: 4px solid #4b5563;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.9);
+}
+
+.plummet-canvas {
+    width: 100%;
+    height: 100%;
+}
+
+/* 雙狀態指標欄 */
+.dual-status-dashboard {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    background: #0f172a;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #1e293b;
+    width: 100%;
+    justify-content: space-between;
+}
+
+.status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* 三角基座真實拓撲佈局 (Triangular Tribrach Layout) */
+.tribrach-triangular-station {
+    position: relative;
+    width: 480px;
+    height: 360px;
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 75%);
+    border: 2px solid #334155;
+    border-radius: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.7);
+    margin: 0 auto;
+}
+
+/* 三角基座幾何基板導引線 */
+.tribrach-triangular-station::before {
+    content: '';
+    position: absolute;
+    width: 320px;
+    height: 250px;
+    border: 2px dashed rgba(245, 158, 11, 0.2);
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    pointer-events: none;
+}
+
+/* 頂部頂點: 腳螺旋 C */
+.screw-widget-top {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    z-index: 5;
+}
+
+/* 左下角頂點: 腳螺旋 A */
+.screw-widget-bottom-left {
+    position: absolute;
+    bottom: 14px;
+    left: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    z-index: 5;
+}
+
+/* 右下角頂點: 腳螺旋 B */
+.screw-widget-bottom-right {
+    position: absolute;
+    bottom: 14px;
+    right: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    z-index: 5;
+}
+
+/* 腳螺旋旋鈕視覺元件 */
+.screw-knob-visual {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #475569 0%, #1e293b 70%, #0f172a 100%);
+    border: 3px solid #64748b;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--accent-yellow);
+    transition: transform 0.1s ease;
+}
+
+.screw-button-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.95);
+    padding: 3px 6px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+}
+
+.screw-btn-mini {
+    background: #334155;
+    border: none;
+    color: #fff;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.15s;
+    font-size: 13px;
+}
+
+.screw-btn-mini:hover {
+    background: var(--accent-yellow);
+    color: #000;
+}
+
+/* 圓水準氣泡盤與管狀氣泡 */
+.bubble-panel {
+    background: transparent;
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    z-index: 4;
+}
+
+.bubble-circular {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #064e3b 0%, #022c22 80%);
+    border: 4px solid #4b5563;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.8);
+}
+
+.bubble-circular-target {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    position: absolute;
+}
+
+.bubble-liquid-drop {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #6ee7b7 20%, #10b981 80%);
+    position: absolute;
+    box-shadow: 0 0 8px #34d399;
+    transition: transform 0.05s linear;
+}
+
+/* 腳螺旋控制器 (A, B, C) */
+.screws-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.screw-control-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #111827;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+}
+
+.screw-label {
+    font-size: 13px;
+    font-weight: 700;
+    width: 80px;
+    color: var(--accent-yellow);
+}
+
+.screw-btn {
+    background: #374151;
+    border: none;
+    color: #fff;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 700;
+    transition: background 0.15s;
+}
+
+.screw-btn:hover {
+    background: var(--accent-yellow);
+    color: #000;
+}
+
+/* =================================================== */
+/* 望遠鏡目鏡視圖 (Telescope Reticle View) */
+/* =================================================== */
+#telescope-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 90;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    cursor: default;
+    pointer-events: auto;
+}
+
+#telescope-overlay.active {
+    display: flex;
+}
+
+.telescope-viewfinder {
+    width: min(85vh, 85vw);
+    height: min(85vh, 85vw);
+    border-radius: 50%;
+    border: 8px solid #262626;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.96), inset 0 0 60px rgba(0,0,0,0.9);
+    position: relative;
+    overflow: hidden;
+    background: #1e293b;
+}
+
+.telescope-canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(0px);
+    transition: filter 0.1s ease;
+}
+
+.reticle-hairs {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* 十字絲與上中下視距絲 */
+.reticle-center-v {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1.5px;
+    background: #000;
+    box-shadow: 0 0 1px #fff;
+}
+
+.reticle-center-h {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1.5px;
+    background: #000;
+    box-shadow: 0 0 1px #fff;
+}
+
+.reticle-stadia-top {
+    position: absolute;
+    left: calc(50% - 30px);
+    width: 60px;
+    top: 35%;
+    height: 1.5px;
+    background: #000;
+    box-shadow: 0 0 1px #fff;
+}
+
+.reticle-stadia-bottom {
+    position: absolute;
+    left: calc(50% - 30px);
+    width: 60px;
+    top: 65%;
+    height: 1.5px;
+    background: #000;
+    box-shadow: 0 0 1px #fff;
+}
+
+/* 望遠鏡右側旋鈕操作面板 */
+.telescope-side-controls {
+    position: absolute;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-tech);
+    border-radius: 12px;
+    padding: 20px;
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tele-slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tele-slider-group label {
+    font-size: 13px;
+    color: var(--accent-yellow);
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+}
+
+.tele-slider {
+    width: 100%;
+    accent-color: var(--accent-yellow);
+}
+
+/* =================================================== */
+/* 無人機 FPV 飛行 HUD (Drone Cockpit Interface) */
+/* =================================================== */
+#drone-hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 50;
+    display: none;
+}
+
+#drone-hud.active {
+    display: block;
+}
+
+.drone-top-bar {
+    position: absolute;
+    top: 15px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: #10b981;
+    text-shadow: 0 0 4px #000;
+    z-index: 920;
+}
+
+.drone-telemetry-item {
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(6px);
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.drone-artificial-horizon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 220px;
+    height: 220px;
+    border: 1px dashed rgba(16, 185, 129, 0.3);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.horizon-pitch-ladder {
+    width: 120px;
+    height: 2px;
+    background: #10b981;
+    box-shadow: 0 0 6px #10b981;
+}
+
+.drone-grid-overlay {
+    position: absolute;
+    top: 10%;
+    left: 10%;
+    right: 10%;
+    bottom: 10%;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+}
+
+.drone-grid-cell {
+    border: 0.5px dashed rgba(16, 185, 129, 0.1);
+}
+
+.drone-camera-shutter-btn {
+    position: absolute;
+    bottom: 40px;
+    right: 40px;
+    pointer-events: auto;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 4px solid #fff;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    color: #fff;
+    transition: transform 0.1s;
+}
+
+.drone-camera-shutter-btn:active {
+    transform: scale(0.92);
+}
+
+/* =================================================== */
+/* 結算評等與通關面板 (Level Complete Score Dialog) */
+/* =================================================== */
+.score-modal {
+    background: var(--bg-panel-solid);
+    border: 2px solid var(--accent-yellow);
+    border-radius: 12px;
+    width: 540px;
+    padding: 30px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.score-rank {
+    font-size: 64px;
+    font-weight: 900;
+    color: var(--accent-yellow);
+    text-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+    line-height: 1;
+}
+
+.score-details-table {
+    width: 100%;
+    margin-top: 10px;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.score-details-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.score-details-table td:first-child {
+    text-align: left;
+    color: var(--text-muted);
+}
+.score-details-table td:last-child {
+    text-align: right;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* 滾動條美化 */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-yellow);
+}
