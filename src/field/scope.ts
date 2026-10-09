@@ -58,6 +58,7 @@ class LevelScope {
     this.savedFov = cam.fov;
     p.externalControl = (dt: number) => this.tick(dt);
 
+    const mob = !!(window as AnyObj).__mobile;
     this.root = el('scope');
     this.root.innerHTML = `
       <svg class="scope-ret" aria-hidden="true"></svg>
@@ -65,16 +66,23 @@ class LevelScope {
       <div class="scope-focus"><span>調焦</span><div class="sf-bar"><i></i></div></div>
       <div class="scope-tilt" hidden>標尺沒扶直！<kbd class="cap">Y</kbd> 用對講機叫學弟扶好</div>
       <div class="scope-vibe" hidden>⚠ 地面震動中：補償器擺動，影像一直跳</div>
+      ${mob ? '<div class="scope-touch"></div>' : ''}
       <div class="bench-card paper scope-card">
         <div class="bench-head"><h3>${o.title}</h3><span class="bench-keys"><kbd class="cap">A</kbd><kbd class="cap">D</kbd> 轉動　<kbd class="cap">Q</kbd><kbd class="cap">E</kbd> 調焦　<kbd class="cap cap-wide">Esc</kbd> 離開</span></div>
         <div class="bench-body">
           <p>電子水準儀會自己讀條碼。把<strong>豎絲對準標尺</strong>、<strong>調焦到清楚</strong>，按 <kbd class="cap cap-wide">Enter</kbd> 量測。</p>
           <div class="dl-screen"><span class="dl-label">DNA 03</span><span class="dl-val">— — —</span></div>
           <p class="bench-fb" aria-live="polite"></p>
+          ${mob ? `<div class="scope-mbar">
+            <button type="button" class="sm-btn primary" data-a="measure">量測</button>
+            <button type="button" class="sm-btn" data-a="tilt" hidden>叫學弟扶直</button>
+            <button type="button" class="sm-btn ghost" data-a="close">離開</button>
+          </div>` : ''}
         </div>
       </div>`;
     document.body.appendChild(this.root);
     this.drawReticle();
+    if (mob) this.touch();
 
     this.onKeyDown = (e: KeyboardEvent) => this.key(e, true);
     this.onKeyUp = (e: KeyboardEvent) => this.key(e, false);
@@ -104,6 +112,50 @@ class LevelScope {
     cam.quaternion.setFromEuler(p.euler);
     try { (this.app.sceneManager.renderer.domElement.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {}); } catch { /* 需要使用者手勢 */ }
     this.o.onClose(this.focus);
+  }
+
+  /** 手機：拖畫面＝轉望遠鏡、拖左邊的尺＝調焦、按鈕＝量測／扶直／離開 */
+  private touch() {
+    const r = this.root!;
+    const pad = r.querySelector('.scope-touch') as HTMLElement;
+    let px = 0, on = false;
+    pad.addEventListener('pointerdown', (e) => { on = true; px = e.clientX; try { pad.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ } });
+    pad.addEventListener('pointermove', (e) => {
+      if (!on) return;
+      const dx = e.clientX - px;
+      px = e.clientX;
+      // 拖畫面：影像跟著手指走 (手指往右 → 鏡頭往左轉)
+      this.o.head.rotation.y += dx * 0.00085;
+    });
+    const up = (e: PointerEvent) => { on = false; try { pad.releasePointerCapture(e.pointerId); } catch { /* 合成事件 */ } };
+    pad.addEventListener('pointerup', up);
+    pad.addEventListener('pointercancel', up);
+    // 調焦尺
+    const fb = r.querySelector('.scope-focus') as HTMLElement;
+    fb.classList.add('touchable');
+    const bar = r.querySelector('.sf-bar') as HTMLElement;
+    const setFromY = (cy: number) => {
+      const b = bar.getBoundingClientRect();
+      const k = Math.max(0, Math.min(1, (cy - b.top) / b.height));
+      this.focus = 2 * Math.pow(40, k);
+      audio()?.playScrewRotate?.();
+    };
+    let fon = false;
+    bar.addEventListener('pointerdown', (e) => { fon = true; setFromY(e.clientY); try { bar.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ } e.stopPropagation(); });
+    bar.addEventListener('pointermove', (e) => { if (fon) { setFromY(e.clientY); e.stopPropagation(); } });
+    const fup = (e: PointerEvent) => { fon = false; try { bar.releasePointerCapture(e.pointerId); } catch { /* 合成事件 */ } };
+    bar.addEventListener('pointerup', fup);
+    bar.addEventListener('pointercancel', fup);
+    // 按鈕
+    r.querySelectorAll<HTMLButtonElement>('.sm-btn').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const a = b.dataset.a;
+        if (a === 'measure') this.submit();
+        else if (a === 'close') this.close();
+        else if (a === 'tilt' && this.o.tilted()) { this.o.onFixTilt(); this.say('「好，扶直了！」', 'ok'); }
+      };
+    });
   }
 
   private key(e: KeyboardEvent, down: boolean) {
@@ -180,6 +232,8 @@ class LevelScope {
     } else tr?.remove();
     const tilt = this.root?.querySelector('.scope-tilt') as HTMLElement | null;
     if (tilt) tilt.hidden = !this.o.tilted();
+    const tb = this.root?.querySelector('.sm-btn[data-a="tilt"]') as HTMLElement | null;
+    if (tb) tb.hidden = !this.o.tilted();
   }
 
   /** 十字絲：中絲 + 豎絲 + 上下視距絲 (±0.005 rad) */

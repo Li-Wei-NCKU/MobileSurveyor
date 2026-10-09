@@ -385,6 +385,14 @@ export class GcpJob {
   }
 
   private groundAim(maxD = 5): THREE.Vector3 | null {
+    // 手機版是 2.5D 俯視：用「剛剛點的地面」或玩家腳下，而不是鏡頭準心
+    const pl = this.fd.app.player as AnyObj;
+    if ((window as AnyObj).__mobile && !pl.isDroneMode) {
+      const p = pl.position as THREE.Vector3;
+      const a = pl.aimPoint as THREE.Vector3 | null;
+      if (a && Math.hypot(a.x - p.x, a.z - p.z) < Math.max(3, maxD)) return a.clone();
+      return V(p.x, topAt(this.sm, p.x, p.z), p.z);
+    }
     const cam = this.sm.camera as THREE.PerspectiveCamera;
     const dir = V(); cam.getWorldDirection(dir);
     const o = cam.position.clone();
@@ -915,15 +923,23 @@ export class GcpJob {
   private phoneHid: THREE.Object3D[] = [];
   private togglePhone() {
     const cam = this.sm.camera as THREE.Camera;
-    if (this.phone) { this.phone.remove(); this.phone = null; document.body.classList.remove('phone-cam'); this.phoneHid.forEach(c => { c.visible = true; }); this.phoneHid = []; ui.forceFieldbook(false); return; }
+    if (this.phone) {
+      this.phone.remove(); this.phone = null;
+      document.body.classList.remove('phone-cam');
+      this.phoneHid.forEach(c => { c.visible = true; }); this.phoneHid = [];
+      ui.forceFieldbook(false);
+      (window as AnyObj).__lookMode?.(false);   // 手機版：離開第一人稱取景
+      return;
+    }
     ui.forceFieldbook(true);
     this.phoneHid = cam.children.filter(c => c.visible); this.phoneHid.forEach(c => { c.visible = false; });
     const d = document.createElement('div');
     d.className = 'phone-view';
-    d.innerHTML = '<div class="pv-frame"><i class="pv-c tl"></i><i class="pv-c tr"></i><i class="pv-c bl"></i><i class="pv-c br"></i><b class="pv-cross"></b></div><div class="big-guide"><b>點位照片</b>　近照：站在標旁邊、標放在畫面中間按 <kbd class="cap">Space</kbd><br>遠照（2 張）：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等參考地物</div><div class="pv-bar"><span class="pv-rec">● 點位照片</span><span>Space 拍照　C 收起手機</span></div>';
+    d.innerHTML = '<div class="pv-frame"><i class="pv-c tl"></i><i class="pv-c tr"></i><i class="pv-c bl"></i><i class="pv-c br"></i><b class="pv-cross"></b></div><div class="big-guide"><b>點位照片</b>　近照：站在標旁邊、標放在畫面中間按 <kbd class="cap">Space</kbd><br>遠照（2 張）：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等參考地物</div><div class="pv-bar"><span class="pv-rec">● 點位照片</span><span class="pv-keys">Space 拍照　C 收起手機</span></div>';
     document.body.appendChild(d);
     document.body.classList.add('phone-cam');
     this.phone = d;
+    (window as AnyObj).__lookMode?.(true);      // 手機版：改成第一人稱，拖曳取景
     sfx.pickup();
   }
 
@@ -1227,6 +1243,54 @@ export class GcpJob {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.stopPropagation(); close(); } };
     window.addEventListener('keydown', onKey, true);
     (box.querySelector('#ortho-ok') as HTMLButtonElement).onclick = close;
+  }
+
+  /** 手機版任務指引 */
+  mobileGuide(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
+    const fd = this.fd;
+    if (!this.on || fd.inTruck || this.phone || this.benchBusy()) return null;
+    if (!['site', 'observe'].includes(fd.phase)) return null;
+    // 下午：航拍
+    if (this.uav.stage === 'setup') {
+      if (fd.carrying === 'drone') return null;        // 自己挑空地
+      const g = fd.ground.find(x => x.item === 'drone');
+      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿無人機箱去找起降點', reach: 1.3, obj: g.obj };
+      const t = fd.truck.toWorld(-3.6, 0, 0);
+      return { x: t.x, z: t.z, label: '去後斗拿無人機箱', reach: 1.4, obj: fd.truck.tailHit as THREE.Object3D };
+    }
+    if (this.uav.stage === 'ready' && this.uav.home) {
+      const h = this.uav.home;
+      return { x: h.x, z: h.z + 1.2, label: '規劃航線、起飛', reach: 1.2 };
+    }
+    // 上午：佈標 → RTK → 照片
+    const p = fd.app.player.position;
+    if (this.gcps.length < 4 && !fd.carrying && !this.have('paint', p.x, p.z)) {
+      const t = fd.truck.toWorld(-3.6, 0, 0);
+      return { x: t.x, z: t.z, label: '去後斗拿噴漆箱', reach: 1.4, obj: fd.truck.tailHit as THREE.Object3D };
+    }
+    const noRtk = this.gcps.find(g => !g.rtk);
+    if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name}`, reach: 1.0 };
+    const noPhoto = this.gcps.find(g => !g.photos.close || g.photos.wide.length < 2);
+    if (noPhoto && this.gcps.length >= 4) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, label: `拍 ${noPhoto.name} 的點位照片`, reach: 1.2 };
+    if (this.gcps.length < 4) return null;             // 位置要自己挑
+    const a = this.asst?.g;
+    if (a) return { x: a.position.x, z: a.position.z, label: '跟學弟說可以收工了', reach: 2.0, obj: a as THREE.Object3D };
+    return null;
+  }
+
+  /** 手機版動作列 */
+  mobileActs(): { id: string; text: string; code: string }[] {
+    if (!this.on || this.fd.inTruck) return [];
+    const ph = this.fd.phase;
+    const out: { id: string; text: string; code: string }[] = [];
+    if (this.phone) {
+      out.push({ id: 'gc-shoot', text: '拍照', code: 'Space' });
+      out.push({ id: 'gc-phone', text: '收起手機', code: 'KeyC' });
+      return out;
+    }
+    if (['site', 'observe', 'packup', 'prep'].includes(ph)) out.push({ id: 'gc-map', text: this.map ? '收起外業地圖' : '外業地圖', code: 'KeyQ' });
+    if (['site', 'observe', 'packup'].includes(ph)) out.push({ id: 'gc-cam', text: '手機拍照', code: 'KeyC' });
+    return out;
   }
 
   onKey(e: KeyboardEvent): boolean {

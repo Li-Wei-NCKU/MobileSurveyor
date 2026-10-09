@@ -764,7 +764,7 @@ export class FieldDay {
       }
       return { ...door(), label: '東西都收好了，上車回公司', reach: 1.3 };
     }
-    // 現場：第一天 GNSS (第二、三天還沒改成觸控)
+    // 現場：第一天 GNSS
     if (this.job === 'gnss' && (this.phase === 'site' || this.phase === 'observe')) {
       const gnss = this.app.levelsMap.gnss;
       const monObj = find(o => o.userData?.type === 'monument' && String(o.userData.label || '').includes('CKSV'));
@@ -782,7 +782,9 @@ export class FieldDay {
       if (gnss?.currentStep >= 2 && !this.toolbagOn) return fetch('toolbag') || { ...mon, label: '拿外業工具袋來量天線高', reach: 1.6 };
       return { ...mon, label: '回到儀器旁繼續作業', reach: 1.6 };
     }
-    return null;
+    // 第二、三天：由各自的工作給指引
+    const sub = this.sub as AnyObj | null;
+    return sub?.mobileGuide?.() || null;
   }
 
   /** 手機版：後斗裡有什麼、拿不拿得出來 */

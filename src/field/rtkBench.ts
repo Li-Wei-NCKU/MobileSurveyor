@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import type { GameApp } from './legacy';
 import { SM } from './legacy';
 import * as ui from './ui';
+import { attachHoldPad, isMobile, type PadVec } from './holdPad';
 import * as sfx from './sfx';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -45,6 +46,8 @@ class RtkBench {
   private t = 0;
   private hidden: THREE.Object3D[] = [];
   private keys = { u: false, d: false, l: false, r: false };
+  private pad: PadVec = { x: 0, y: 0 };
+  private padDetach: (() => void) | null = null;
   private onKey: ((e: KeyboardEvent) => void) | null = null;
   private onUp: ((e: KeyboardEvent) => void) | null = null;
   // 氣泡 (−1~1；圈的半徑 0.28)
@@ -99,7 +102,7 @@ class RtkBench {
     this.root.innerHTML = `
       <div class="big-guide rtk-banner"><div class="bg-main"></div></div>
       <div class="bench-card paper rtk-card">
-        <div class="bench-head"><h3>${o.name}　RTK 測坐標</h3><span class="bench-keys">WASD：扶正桿子　Space：開始記錄　Esc：先不測</span></div>
+        <div class="bench-head"><h3>${o.name}　RTK 測坐標</h3><span class="bench-keys">${isMobile() ? '按住水準器扶正桿子' : 'WASD：扶正桿子　Space：開始記錄　Esc：先不測'}</span></div>
         <div class="rtk-body">
           <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
           <div class="rtk-screen">
@@ -114,8 +117,22 @@ class RtkBench {
             <div class="rs-rec"><span class="rs-rec-t">記錄 0 / 3</span><i><em></em></i></div>
           </div>
         </div>
+        ${isMobile() ? `<div class="scope-mbar rtk-mbar">
+          <button type="button" class="sm-btn primary" data-a="rec">開始記錄</button>
+          <button type="button" class="sm-btn ghost" data-a="quit">先不測</button>
+        </div>` : ''}
       </div>`;
     document.body.appendChild(this.root);
+    if (isMobile()) {
+      this.padDetach = attachHoldPad(this.root.querySelector('.rh-vial'), this.pad);
+      this.root.querySelectorAll<HTMLButtonElement>('.rtk-mbar .sm-btn').forEach(b => {
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          if (b.dataset.a === 'rec') this.key({ code: 'Space', preventDefault() {}, stopPropagation() {} } as KeyboardEvent, true);
+          else this.key({ code: 'Escape', preventDefault() {}, stopPropagation() {} } as KeyboardEvent, true);
+        };
+      });
+    }
     this.onKey = (ev) => this.key(ev, true);
     this.onUp = (ev) => this.key(ev, false);
     window.addEventListener('keydown', this.onKey, true);
@@ -164,7 +181,8 @@ class RtkBench {
     // 氣泡：亂飄 + 風推 + 玩家壓
     const w = this.o.wind;
     const gust = 0.5 + 0.5 * Math.sin(this.time * 0.9) * Math.sin(this.time * 2.3);
-    const fx = (this.keys.r ? 1 : 0) - (this.keys.l ? 1 : 0), fy = (this.keys.d ? 1 : 0) - (this.keys.u ? 1 : 0);
+    const fx = (this.keys.r ? 1 : 0) - (this.keys.l ? 1 : 0) + this.pad.x;
+    const fy = (this.keys.d ? 1 : 0) - (this.keys.u ? 1 : 0) + this.pad.y;
     this.vx += ((Math.random() - 0.5) * 1.4 + w.x * 0.18 * gust + fx * 2.2) * dt;
     this.vy += ((Math.random() - 0.5) * 1.4 + w.z * 0.18 * gust + fy * 2.2) * dt;
     this.vx *= Math.pow(0.25, dt); this.vy *= Math.pow(0.25, dt);
@@ -252,6 +270,7 @@ class RtkBench {
     if (this.onKey) window.removeEventListener('keydown', this.onKey, true);
     if (this.onUp) window.removeEventListener('keyup', this.onUp, true);
     this.onKey = this.onUp = null;
+    this.padDetach?.(); this.padDetach = null;
     this.root?.remove(); this.root = null;
     app.sceneManager.scene.remove(this.pole);
     document.body.classList.remove('bench-active', 'gcp-bench');

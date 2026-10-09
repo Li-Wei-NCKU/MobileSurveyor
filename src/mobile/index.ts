@@ -21,6 +21,8 @@ import { installTruckMenu } from './truckMenu';
 import { installWaterMenu } from './waterMenu';
 import { MobileGuide } from './guide';
 import { openNote } from './checklist';
+import { installLookMode } from './lookMode';
+import { installUavTouch } from './uavTouch';
 import { installMobileDebug } from './debugMobile';
 import { applyGfx } from './gfx';
 
@@ -46,6 +48,8 @@ import { applyGfx } from './gfx';
   installShelfView(app, field, cam, player);
   installTruckMenu(app, field);
   installWaterMenu(app, field);
+  installLookMode(app, player);
+  const uavPad = installUavTouch();
   const guide = new MobileGuide(app, field, player);
 
   // 說明文字裡的鍵盤操作改寫成觸控說法
@@ -91,9 +95,10 @@ import { applyGfx } from './gfx';
   const origUpdate = field.update.bind(field);
   field.update = (dt: number) => {
     origUpdate(dt);
-    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack;
+    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack && !document.body.classList.contains('scope-active');
     input.update(dt);
     guide.update(dt);
+    uavPad();
     // 進器材室時自動翻開一次備料清單 (玩家不會知道 GNSS 要帶什麼)
     if (!noteShown && field.phase === 'prep' && !player.isModalOpen() && app.currentLevelObj === field) { noteShown = true; openNote(field); }
     hud.update(dt);

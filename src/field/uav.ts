@@ -359,7 +359,7 @@ export class UavOps {
       return best;
     };
     let drag = -1;
-    cv.onmousedown = (ev) => {
+    const onDown = (ev: MouseEvent) => {
       if (ev.button !== 0) return;
       ev.preventDefault();
       const i = pick(ev);
@@ -367,15 +367,35 @@ export class UavOps {
       // 空白處：新增一個航點 (按住不放可以直接拖到想要的位置)
       this.plan.push(toLocalPt(ev)); drag = this.plan.length - 1; sfx.pickup(); draw();
     };
-    cv.onmousemove = (ev) => {
+    const onMove = (ev: MouseEvent) => {
       if (drag >= 0 && this.plan[drag]) { this.plan[drag] = toLocalPt(ev); hover = null; draw(); return; }
       cv.style.cursor = pick(ev) >= 0 ? 'grab' : 'crosshair';
       hover = toLocalPt(ev); draw();
     };
     const endDrag = () => { if (drag >= 0) { drag = -1; cv.style.cursor = 'crosshair'; draw(); } };
-    cv.onmouseup = endDrag;
-    cv.onmouseleave = () => { endDrag(); hover = null; draw(); };
-    cv.oncontextmenu = (ev) => { ev.preventDefault(); const i = pick(ev); if (i >= 0) this.plan.splice(i, 1); else this.plan.pop(); draw(); };
+    // 用 pointer 事件：滑鼠和手指都能拖航點
+    cv.style.touchAction = 'none';
+    let longT = 0, downX = 0, downY = 0;
+    cv.addEventListener('pointerdown', (ev) => {
+      downX = ev.clientX; downY = ev.clientY;
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      try { cv.setPointerCapture(ev.pointerId); } catch { /* 合成事件 */ }
+      // 長按航點 = 刪掉它 (手指沒有右鍵)
+      const i0 = pick(ev);
+      longT = window.setTimeout(() => {
+        if (i0 >= 0 && drag === i0) { this.plan.splice(i0, 1); drag = -1; sfx.error(); draw(); }
+      }, 650);
+      onDown(ev);
+    });
+    cv.addEventListener('pointermove', (ev) => {
+      if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 10) clearTimeout(longT);
+      onMove(ev);
+    });
+    const pUp = (ev: PointerEvent) => { clearTimeout(longT); endDrag(); try { cv.releasePointerCapture(ev.pointerId); } catch { /* 合成事件 */ } };
+    cv.addEventListener('pointerup', pUp);
+    cv.addEventListener('pointercancel', pUp);
+    cv.addEventListener('pointerleave', () => { clearTimeout(longT); endDrag(); hover = null; draw(); });
+    cv.oncontextmenu = (ev) => { ev.preventDefault(); const i = pick(ev as unknown as MouseEvent); if (i >= 0) this.plan.splice(i, 1); else this.plan.pop(); draw(); };
     const act = (a: string) => {
       if (a === 'undo') this.plan.pop();
       if (a === 'clear') this.plan = [];

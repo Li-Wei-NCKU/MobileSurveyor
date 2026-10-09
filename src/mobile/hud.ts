@@ -149,7 +149,9 @@ export class MobileHud {
     const fd = this.field;
     const out: Act[] = [];
     if (fd.inTruck) return out; // 開車由 driveTouch 接管
-    if (fd.carrying) out.push({ id: 'drop', text: '放下', minor: true, on: () => this.key('KeyG') });
+    const fp0 = (this.app.currentLevelObj as AnyObj)?.getFreeInteractPrompt?.() as string | null;
+    // 情境動作已經是「放下○○」時就不要再給一顆小「放下」
+    if (fd.carrying && !(fp0 && fp0.startsWith('放下'))) out.push({ id: 'drop', text: '放下', minor: true, on: () => this.key('KeyG') });
     // 喝水沒有常駐按鍵：點地上或後斗的礦泉水時才出現選項 (waterMenu / truckMenu)
     const sub = (fd as AnyObj).sub;
     if (sub) {
@@ -159,7 +161,7 @@ export class MobileHud {
     }
     const rp = (fd as AnyObj).events?.rescuePoint?.();
     if (rp) out.push({ id: 'rescue', text: rp.label, accent: true, on: () => (this.app.player as AnyObj).walkTo({ x: rp.x, z: rp.z, reach: rp.follow ? 1.2 : 0.2, follow: rp.follow, label: rp.label }) });
-    const fp = (this.app.currentLevelObj as AnyObj)?.getFreeInteractPrompt?.();
+    const fp = fp0;
     if (fp) out.push({ id: 'free', text: fp, key: 'E', accent: true, on: () => (this.app.currentLevelObj as AnyObj).onFreeInteract?.() });
     return out;
   }

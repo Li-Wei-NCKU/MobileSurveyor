@@ -11,6 +11,7 @@ import type { GameApp } from './legacy';
 import { SM } from './legacy';
 import * as ui from './ui';
 import * as sfx from './sfx';
+import { isMobile } from './holdPad';
 import { tell } from './story';
 
 const N = 256;          // 畫布解析度
@@ -168,6 +169,9 @@ class GcpBench {
   private onDown: ((e: MouseEvent) => void) | null = null;
   private onUp: ((e: MouseEvent) => void) | null = null;
   private onWheel: ((e: WheelEvent) => void) | null = null;
+  private onPDown: ((e: PointerEvent) => void) | null = null;
+  private onPMove: ((e: PointerEvent) => void) | null = null;
+  private onPUp: (() => void) | null = null;
   private ray = new THREE.Raycaster();
   private hidden: THREE.Object3D[] = [];
 
@@ -222,10 +226,25 @@ class GcpBench {
       if (this.step === 'white' || this.step === 'black') { this.hgt = THREE.MathUtils.clamp(this.hgt + (e.deltaY > 0 ? 0.03 : -0.03), 0.12, 0.55); this.refreshCard(); }
     };
     window.addEventListener('keydown', this.onKey, true);
-    window.addEventListener('mousemove', this.onMove);
-    window.addEventListener('mousedown', this.onDown);
-    window.addEventListener('mouseup', this.onUp);
-    window.addEventListener('wheel', this.onWheel, { passive: false });
+    if (isMobile()) {
+      this.onPDown = (e: PointerEvent) => {
+        if ((e.target as HTMLElement)?.closest?.('.bench-card, .gcpb-mbar')) return;
+        e.preventDefault();
+        this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.down = true;
+        if (this.step === 'nail') this.strike();
+      };
+      this.onPMove = (e: PointerEvent) => { if (this.mouse.down) e.preventDefault(); this.mouse.x = e.clientX; this.mouse.y = e.clientY; };
+      this.onPUp = () => { this.mouse.down = false; };
+      window.addEventListener('pointerdown', this.onPDown, { passive: false });
+      window.addEventListener('pointermove', this.onPMove, { passive: false });
+      window.addEventListener('pointerup', this.onPUp);
+      window.addEventListener('pointercancel', this.onPUp);
+    } else {
+      window.addEventListener('mousemove', this.onMove);
+      window.addEventListener('mousedown', this.onDown);
+      window.addEventListener('mouseup', this.onUp);
+      window.addEventListener('wheel', this.onWheel, { passive: false });
+    }
     this.mouse.x = innerWidth / 2; this.mouse.y = innerHeight / 2;
     this.go('template');
   }
@@ -496,7 +515,46 @@ class GcpBench {
     if (!this.banner) { this.banner = el('div', 'big-guide gcpb-banner'); this.root.appendChild(this.banner); }
     this.banner.innerHTML = `<div class="bg-steps">${order.map(([k, n], i) => `<span class="${k === cur ? 'on' : order.findIndex(o => o[0] === cur) > i ? 'done' : ''}">${i + 1} ${n}</span>`).join('<i>→</i>')}</div><div class="bg-main">${big[cur] || '……'}</div>`;
     if (!this.card) { this.card = el('div', 'bench-card paper gcpb-card'); this.root.appendChild(this.card); }
-    this.card.innerHTML = `<div class="bench-head"><h3>${title}</h3><span class="bench-keys">${keys}</span></div><div class="bench-body">${body}</div>`;
+    const mb = isMobile() ? this.mobileBar() : '';
+    this.card.innerHTML = `<div class="bench-head"><h3>${title}</h3><span class="bench-keys">${isMobile() ? '' : keys}</span></div><div class="bench-body">${body}</div>${mb}`;
+    if (mb) {
+      this.card.querySelectorAll<HTMLButtonElement>('.gcpb-mbar button[data-c]').forEach(b => {
+        b.onclick = (ev) => { ev.stopPropagation(); this.fakeKey(b.dataset.c!); };
+        if (b.dataset.hold) {
+          const dn = (ev: PointerEvent) => { ev.preventDefault(); ev.stopPropagation(); b.classList.add('on'); this.mouse.down = true; };
+          const upp = (ev: PointerEvent) => { ev.stopPropagation(); b.classList.remove('on'); this.mouse.down = false; };
+          b.addEventListener('pointerdown', dn);
+          b.addEventListener('pointerup', upp);
+          b.addEventListener('pointercancel', upp);
+        }
+      });
+    }
+  }
+
+  /** 手機版：把鍵盤操作換成按鈕 */
+  private mobileBar(): string {
+    const b = (c: string, t: string, cls = '') => `<button type="button" data-c="${c}" class="${cls}">${t}</button>`;
+    if (this.step === 'template') {
+      return `<div class="gcpb-mbar">${b('KeyA', '↺ 左轉')}${b('KeyD', '↻ 右轉')}${b('Enter', '放好模板', 'primary')}</div>`;
+    }
+    if (this.step === 'white' || this.step === 'black') {
+      const hi = `<div class="gcpb-mbar"><button type="button" data-c="hgt-" >噴罐降低</button><button type="button" data-c="hgt+">噴罐升高</button>${this.step === 'black' ? b('KeyR', '轉遮板') : ''}${b('Enter', this.step === 'white' ? '白漆好了' : '黑漆好了', 'primary')}</div>`;
+      return `<div class="gcpb-tip">手指按住畫面上要噴的地方拖曳＝噴漆</div>${hi}`;
+    }
+    if (this.step === 'nail') {
+      return `<div class="gcpb-mbar">${this.bent ? b('KeyR', '拔起來換一根', 'primary') : b('Space', '敲下去', 'primary')}</div>`;
+    }
+    return '';
+  }
+
+  /** 手機按鈕 → 沿用鍵盤邏輯 */
+  private fakeKey(code: string) {
+    if (code === 'hgt-' || code === 'hgt+') {
+      this.hgt = THREE.MathUtils.clamp(this.hgt + (code === 'hgt+' ? 0.03 : -0.03), 0.12, 0.55);
+      this.refreshCard();
+      return;
+    }
+    this.key({ code, preventDefault() {}, stopPropagation() {} } as KeyboardEvent);
   }
 
   private key(e: KeyboardEvent) {
@@ -875,6 +933,11 @@ class GcpBench {
     if (this.onDown) window.removeEventListener('mousedown', this.onDown);
     if (this.onUp) window.removeEventListener('mouseup', this.onUp);
     if (this.onWheel) window.removeEventListener('wheel', this.onWheel);
+    if (this.onPDown) window.removeEventListener('pointerdown', this.onPDown);
+    if (this.onPMove) window.removeEventListener('pointermove', this.onPMove);
+    if (this.onPUp) { window.removeEventListener('pointerup', this.onPUp); window.removeEventListener('pointercancel', this.onPUp); }
+    this.onPDown = this.onPMove = null; this.onPUp = null;
+    this.mouse.down = false;
     this.onKey = this.onMove = this.onDown = this.onUp = null; this.onWheel = null;
     this.root?.remove(); this.root = null; this.card = null; this.banner = null;
     app.sceneManager.scene.remove(this.group);

@@ -16,6 +16,7 @@ import { LEVEL_ROUTE, loadProgress, type Progress, asstName, setAsstName, pickAs
 import { buildLevelStaff, buildTurningPlate, PLATE_TOP } from './levelStaff';
 import { buildPerson, animateWalk, buildDog, animateDog, buildScooter, buildLorry, ROAD_Z } from './npc';
 import { levelScope } from './scope';
+import { attachHoldPad, isMobile, type PadVec } from './holdPad';
 import { bench } from './bench';
 import { playBossIntro, setThreat } from './cine';
 import { dust, phonePhoto, GroundRing, Rumble } from './fx';
@@ -981,7 +982,8 @@ export class LevelJob {
   /** 可能擋住視線的東西：場景裡看得到的實體 mesh (草、半透明提示、精靈圖、電線不算) */
   private losCandidates(): THREE.Object3D[] {
     const out: THREE.Object3D[] = [];
-    const skip = new Set<THREE.Object3D>([this.staff, this.sm.camera, this.carryVis, ...this.arrows, ...(this.inst ? [this.inst] : [])]);
+    const av = (this.fd.app.player as AnyObj).avatar as THREE.Object3D | undefined;   // 手機版的人偶就站在儀器旁，不算障礙
+    const skip = new Set<THREE.Object3D>([this.staff, this.sm.camera, this.carryVis, ...this.arrows, ...(this.inst ? [this.inst] : []), ...(av ? [av] : [])]);
     ((this.sm.floatingArrows || []) as THREE.Object3D[]).forEach(o => skip.add(o));
     ((this.sm.dynamicArrows || []) as THREE.Object3D[]).forEach(o => skip.add(o));
     const walk = (o: THREE.Object3D) => {
@@ -1345,6 +1347,65 @@ export class LevelJob {
   private relock() {
     const c = this.sm.renderer.domElement;
     try { (c.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {}); } catch { /* 需要使用者手勢 */ }
+  }
+
+  /** 手機版任務指引：下一步要去哪 */
+  mobileGuide(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
+    const fd = this.fd;
+    if (fd.inTruck || !['site', 'observe'].includes(fd.phase)) return null;
+    const inst = this.inst;
+    const tail = () => { const t = this.fd.truck.toWorld(-3.6, 0, 0); return { x: t.x, z: t.z, reach: 1.4, obj: this.fd.truck.tailHit as THREE.Object3D }; };
+    const fromTruck = (it: ItemId, label: string) => (this.fd.grid.has(it) ? { ...tail(), label } : null);
+    if (this.carrySet) { const q = this.standPoint(); return { x: q.x, z: q.z, label: '扛到藍圈那裡架站', reach: 1.0 }; }
+    // 還沒把標尺交給學弟
+    if (!this.rodAt && !this.swapped) {
+      const a = this.asst?.g;
+      if ((fd.carrying === 'staff' || fd.carrying === 'plate') && a) {
+        return { x: a.position.x, z: a.position.z, label: `把${ITEMS[fd.carrying].name}交給學弟`, reach: 2.0, obj: a as THREE.Object3D };
+      }
+      const g = fd.ground.find(x => x.item === 'staff');
+      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起水準尺', reach: 1.3, obj: g.obj };
+      const t = fromTruck('staff', '從後斗拿水準尺');
+      if (t) return t;
+    }
+    if (this.hold) return null;                       // 正在扶尺
+    if (!inst) {
+      if (fd.carrying === 'tripod') { const q = this.standPoint(); return { x: q.x, z: q.z, label: '在藍圈附近架站', reach: 1.0 }; }
+      const g = fd.ground.find(x => x.item === 'tripod');
+      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起三腳架', reach: 1.3, obj: g.obj };
+      return fromTruck('tripod', '從後斗拿三腳架');
+    }
+    const at = { x: inst.position.x, z: inst.position.z, reach: 1.6, obj: inst as THREE.Object3D };
+    if (this.instState === 'tripod') {
+      if (fd.carrying === 'level') return { ...at, label: '把水準儀裝上腳架' };
+      const g = fd.ground.find(x => x.item === 'level');
+      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起自動水準儀箱', reach: 1.3, obj: g.obj };
+      return fromTruck('level', '從後斗拿自動水準儀箱') || { ...at, label: '裝水準儀' };
+    }
+    if (this.instState === 'mounted') return { ...at, label: '整平水準儀' };
+    // leveled：看現在輪到誰
+    if (this.swapped) {
+      const pt = this.rodAt;
+      if (pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `去扶尺（${pt.name}）`, reach: 1.0 }; }
+      return null;
+    }
+    const st = this.cur;
+    if (!st) return null;
+    if (st.back.read === undefined) return { ...at, label: `回儀器旁讀後視（${st.back.pt.name}）` };
+    if (!st.fore) return null;                        // 要自己選前視點
+    if (st.fore.read === undefined) return { ...at, label: `回儀器旁讀前視（${st.fore.pt.name}）` };
+    return { ...at, label: '這站完成，換學弟操作' };
+  }
+
+  /** 手機版動作列：鍵盤才有的操作改成按鈕 */
+  mobileActs(): { id: string; text: string; code: string }[] {
+    const out: { id: string; text: string; code: string }[] = [];
+    if (this.carrySet && this.fd.carrying === 'tripod') out.push({ id: 'lv-set', text: '放下整組儀器', code: 'KeyG' });
+    if (this.canRelocate()) {
+      const p = this.fd.app.player.position;
+      if (this.inst && Math.hypot(p.x - this.inst.position.x, p.z - this.inst.position.z) < 3) out.push({ id: 'lv-re', text: '重新架站', code: 'KeyR' });
+    }
+    return out;
   }
 
   onKey(e: KeyboardEvent): boolean {
@@ -2259,6 +2320,8 @@ export class LevelJob {
 
   // ---------------------------------------------------------------- 扶尺小遊戲
   private holdKeys = { u: false, d: false, l: false, r: false };
+  private holdPad: PadVec = { x: 0, y: 0 };
+  private holdDetach: (() => void) | null = null;
   private onHoldKey: ((e: KeyboardEvent) => void) | null = null;
 
   private startHold(pt: Pt) {
@@ -2272,7 +2335,8 @@ export class LevelJob {
       <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
       <div class="rh-prog"><i></i></div>
       <div class="rh-msg"></div>
-      <div class="rh-keys"><kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手</div>`;
+      <div class="rh-keys">${isMobile() ? '手指按在水準器上，往哪邊按就往哪邊扶' : '<kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手'}</div>
+      ${isMobile() ? '<button type="button" class="rh-let">放手</button>' : ''}`;
     document.body.appendChild(el);
     document.body.classList.add('bench-active', 'rod-holding');
     this.hold = { pt, bx: (Math.random() - 0.5) * 0.6, by: (Math.random() - 0.5) * 0.6, vx: 0, vy: 0, sum: 0, n: 0, el };
@@ -2286,6 +2350,12 @@ export class LevelJob {
     };
     window.addEventListener('keydown', this.onHoldKey, true);
     window.addEventListener('keyup', this.onHoldKey, true);
+    if (isMobile()) {
+      this.holdPad.x = 0; this.holdPad.y = 0;
+      this.holdDetach = attachHoldPad(el.querySelector('.rh-vial'), this.holdPad);
+      const letGo = el.querySelector('.rh-let') as HTMLButtonElement | null;
+      if (letGo) letGo.onclick = (ev) => { ev.stopPropagation(); this.endHold(); this.swapHint(); };
+    }
     // 視角會在 holdTick 裡平滑地一直鎖定學弟
     this.swapHint();
   }
@@ -2308,6 +2378,7 @@ export class LevelJob {
       setTimeout(() => el.remove(), 320);
     }
     document.body.classList.remove('bench-active', 'rod-holding');
+    this.holdDetach?.(); this.holdDetach = null;
     if (this.onHoldKey) { window.removeEventListener('keydown', this.onHoldKey, true); window.removeEventListener('keyup', this.onHoldKey, true); }
     this.onHoldKey = null;
   }
@@ -2318,8 +2389,10 @@ export class LevelJob {
     const k = this.holdKeys;
     // 風吹 + 手抖：隨機推力；玩家用 WASD 修正
     const gust = 1.4 + Math.sin(this.time * 0.7) * 0.6;
-    h.vx += ((Math.random() - 0.5) * gust + ((k.r ? 1 : 0) - (k.l ? 1 : 0)) * 2.4) * dt;
-    h.vy += ((Math.random() - 0.5) * gust + ((k.d ? 1 : 0) - (k.u ? 1 : 0)) * 2.4) * dt;
+    const px = (k.r ? 1 : 0) - (k.l ? 1 : 0) + this.holdPad.x;
+    const py = (k.d ? 1 : 0) - (k.u ? 1 : 0) + this.holdPad.y;
+    h.vx += ((Math.random() - 0.5) * gust + px * 2.4) * dt;
+    h.vy += ((Math.random() - 0.5) * gust + py * 2.4) * dt;
     const damp = Math.pow(0.3, dt);
     h.vx *= damp; h.vy *= damp;
     h.bx += h.vx * dt * 2; h.by += h.vy * dt * 2;

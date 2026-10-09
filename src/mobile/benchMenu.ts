@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import type { GameApp, AnyObj } from '../field/legacy';
 import { audio } from '../field/legacy';
 import * as ui from '../field/ui';
+import { bench } from '../field/bench';
 import { commandMenu, type CommandMenu, type MenuBtn } from './sheet';
 import { tell, whatIf } from '../field/story';
 
@@ -38,6 +39,26 @@ class BenchMenu {
 
   install(app: GameApp) {
     this.app = app;
+    // 第二天的水準儀整平也走同一套面板 (桌機是 bench.enter('tribrach'))
+    const b = bench as AnyObj;
+    const origEnter = b.enter.bind(b);
+    const origExit = b.exit.bind(b);
+    const self2 = this;
+    b.enter = (mode: string, g: AnyObj, o: AnyObj = {}) => {
+      if (mode === 'tribrach') {
+        b.mode = 'tribrach';
+        self2.tribrach(g, {
+          noPlummet: !!o.noPlummet, title: o.title,
+          onDone: () => { b.mode = null; o.onDone?.(); },
+        });
+        return;
+      }
+      return origEnter(mode, g, o);
+    };
+    b.exit = (ok?: boolean) => {
+      if (self2.active) { self2.exit(); b.mode = null; return; }
+      return origExit(ok);
+    };
     const P = (window as AnyObj).LevelGNSS.prototype;
     const self = this;
     P.openTribrachModal = function () { self.tribrach(this); };
@@ -49,7 +70,7 @@ class BenchMenu {
     P.stop = function (...a: unknown[]) { self.exit(); return stop ? stop.apply(this, a) : undefined; };
   }
 
-  exit() { this.menu?.close(); this.menu = null; }
+  exit() { this.menu?.close(); this.menu = null; (bench as AnyObj).mode = null; }
 
   // ================================================================
   // 1. 基座定心定平
@@ -229,9 +250,10 @@ class BenchMenu {
     }, 9000);
 
     const lock = () => {
-      if (!(g.isCentered && g.isLeveled) && !warned) {
+      const okAll = g.isLeveled && (np || g.isCentered);   // 只定平的場合 (水準儀) 不看對點
+      if (!okAll && !warned) {
         warned = true;
-        const what = !g.isCentered && !g.isLeveled ? '對心和氣泡都' : !g.isCentered ? '對心' : '氣泡';
+        const what = !np && !g.isCentered && !g.isLeveled ? '對心和氣泡都' : !np && !g.isCentered ? '對心' : '氣泡';
         ui.toast(`${what}還沒進圈。確定要這樣鎖定，再按一次「鎖定」。`, 'warn', 3200);
         return;
       }
@@ -241,7 +263,7 @@ class BenchMenu {
       g.finalLevelingErrorMm = parseFloat(g.currentLevelErrorMm || '0.1');
       g.currentStep = 2;
       audio()?.playSuccessChime?.();
-      if (!(g.isCentered && g.isLeveled)) { tell('對心或氣泡還沒進圈就鎖定基座', '定心定平誤差直接進成果'); whatIf('兩個輪流修到都進圈再鎖定，對心 1 mm 以內、氣泡居中。'); }
+      if (!okAll) { tell('對心或氣泡還沒進圈就鎖定基座', '定心定平誤差直接進成果'); whatIf('兩個輪流修到都進圈再鎖定，對心 1 mm 以內、氣泡居中。'); }
       this.exit();
       this.app.updateMissionPanel(g.title, g.getTasks(), g.currentStep, `基座已鎖定（對心誤差 ${g.finalCenteringErrorMm} mm、氣泡殘差 ${g.finalLevelingErrorMm} mm）。點儀器量斜高。`);
     };

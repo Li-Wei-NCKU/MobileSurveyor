@@ -323,3 +323,47 @@ kbd.cap { display: none !important; }
 .m-tribrach figcaption small { display: block; font: 500 11px var(--font-ui); color: var(--ink-soft); }
 .m-tribrach figcaption b.ok { color: #15803d; }
 .m-tribrach .m-pip .mark.ok, .m-tribrach .m-pip .bubble.ok { stroke: #15803d; }
+
+/* ---------- 望遠鏡 (第二天) ---------- */
+.scope-touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+.scope-card { z-index: 2; }
+body.scope-active .scope-focus { pointer-events: auto; left: 10px; }
+body.scope-active .scope-focus .sf-bar { width: 26px; height: 34vh; touch-action: none; }
+.scope-mbar { display: flex; gap: 8px; margin-top: 8px; }
+.sm-btn { flex: 1; min-height: 48px; padding: 8px 10px; border-radius: 12px; border: 1.5px solid rgba(31,45,61,.35); background: #fff; color: var(--ink); font: 800 15px var(--font-ui); }
+.sm-btn.primary { background: var(--survey-yellow); border-color: #a07400; }
+.sm-btn.ghost { background: transparent; font-weight: 600; }
+.sm-btn[hidden] { display: none; }
+
+/* ---------- 扶尺／扶桿觸控 ---------- */
+.rh-vial.pad { touch-action: none; cursor: grab; }
+.rh-vial.pad::after { content: '按住推'; position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%); font: 600 11px var(--font-ui); color: rgba(255,255,255,.65); white-space: nowrap; }
+.rh-vial.pad.push { box-shadow: 0 0 0 3px rgba(242,183,5,.55); }
+.rh-let { margin-top: 22px; min-height: 46px; padding: 8px 22px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.4); background: rgba(20,29,38,.9); color: #fff; font: 800 15px var(--font-ui); }
+.rtk-mbar { padding: 0 12px 10px; }
+
+/* ---------- 第三天：取景、無人機搖桿 ---------- */
+.m-look { position: fixed; inset: 0; z-index: 38; touch-action: none; }
+.m-look span { position: absolute; left: 50%; bottom: calc(var(--sab) + 120px); transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: rgba(20,29,38,.7); color: #fff; font: 600 12px var(--font-ui); }
+.m-look.on span { opacity: 0; }
+body.phone-cam .pv-keys { display: none; }
+.m-uav { position: fixed; inset: auto 0 0 0; z-index: 44; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 14px calc(var(--sab) + 14px); pointer-events: none; }
+.m-uav button { pointer-events: auto; border: 1px solid var(--glass-line); background: var(--glass); backdrop-filter: blur(8px); color: #fff; font: 800 15px var(--font-ui); border-radius: 14px; }
+.m-uav button.on { background: rgba(242,183,5,.85); color: #1f2d3d; }
+.m-uav-dpad { position: relative; width: 150px; height: 150px; }
+.m-uav-dpad button { position: absolute; width: 50px; height: 50px; }
+.m-uav-dpad .up { left: 50px; top: 0; }
+.m-uav-dpad .left { left: 0; top: 50px; }
+.m-uav-dpad .right { left: 100px; top: 50px; }
+.m-uav-dpad .down { left: 50px; top: 100px; }
+.m-uav-alt { display: flex; flex-direction: column; gap: 10px; }
+.m-uav-alt button { width: 86px; height: 56px; }
+.m-uav-alt .rise { background: rgba(34,197,94,.75); }
+
+/* ---------- 第三天：佈標工作台 ---------- */
+body.gcp-bench { touch-action: none; }
+.gcpb-mbar { display: flex; gap: 8px; padding: 8px 12px 10px; flex-wrap: wrap; }
+.gcpb-mbar button { flex: 1 1 auto; min-width: 84px; min-height: 48px; padding: 8px 10px; border-radius: 12px; border: 1.5px solid rgba(31,45,61,.35); background: #fff; color: var(--ink); font: 700 15px var(--font-ui); }
+.gcpb-mbar button.primary { background: var(--survey-yellow); border-color: #a07400; }
+.gcpb-mbar button.on { background: #fde68a; }
+.gcpb-tip { padding: 0 12px; font: 600 12px var(--font-ui); color: var(--ink-soft); }
