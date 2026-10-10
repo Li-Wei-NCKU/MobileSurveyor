@@ -41,7 +41,7 @@ export function quickLoad(field: FieldDay, i: number): boolean {
   } catch (err) { console.error(err); ui.toast('讀檔失敗：存檔內容有問題。', 'bad', 4000); return false; }
 }
 
-const PHASE: Record<string, string> = { prep: '備料', toSite: '前往現場', site: '現場', observe: '施測中', packup: '收工', return: '回程' };
+const PHASE: Record<string, string> = { prep: '整備儀器', toSite: '前往現場', site: '現場', observe: '施測中', packup: '收工', return: '回程' };
 
 export function quickSaveMenu(app: GameApp, field: FieldDay, loadOnly = false) {
   const rows = [0, 1, 2].map(i => {

@@ -1,6 +1,6 @@
 /**
  * 外業一日 (Field Day) 主控制器
- * 流程：派工單 → 倉庫備料裝車 → 開車到現場 → 卸貨架設 → GNSS 靜態觀測 → 收工清點 → 開回公司 → 成果報告書
+ * 流程：派工單 → 倉庫整備儀器裝車 → 開車到現場 → 卸貨架設 → GNSS 靜態觀測 → 收工清點 → 開回公司 → 成果報告書
  * 以「關卡物件」介面掛在舊版 app.levelsMap.field，沿用 player 的準心互動。
  */
 import { bench } from './bench';
@@ -460,7 +460,7 @@ export class FieldDay {
       rows.push({ label: 'GNSS 觀測品質', detail: `施測評分 ${this.m.gnssScore} / 100${this.events.bumps.length ? `；腳架被碰 ${this.events.bumps.length} 次（${this.events.bumps.join('、')}），重新定平` : ''}${(this.m.gnssNotes || []).length ? `；${this.m.gnssNotes.join('；')}` : ''}`, delta: gnssPts });
     }
     const forgotPts = Math.max(0, 20 - this.m.forgot.size * 10 - extras.length * 2);
-    rows.push({ label: '備料判斷', detail: [this.m.forgot.size ? `漏帶 ${[...this.m.forgot].map(i => ITEMS[i].name).join('、')}（回公司 ${this.m.returnTrips} 趟）` : '必要設備一次帶齊', extras.length ? `多帶 ${extras.length} 件用不到的東西` : ''].filter(Boolean).join('；'), delta: forgotPts });
+    rows.push({ label: '整備儀器', detail: [this.m.forgot.size ? `漏帶 ${[...this.m.forgot].map(i => ITEMS[i].name).join('、')}（回公司 ${this.m.returnTrips} 趟）` : '必要設備一次帶齊', extras.length ? `多帶 ${extras.length} 件用不到的東西` : ''].filter(Boolean).join('；'), delta: forgotPts });
     const drivePts = Math.max(0, 15 - this.m.crashes * 5 - this.m.illegalPark * 5 - Math.min(5, this.m.honked));
     rows.push({ label: '行車安全', detail: [this.m.crashes ? `碰撞 ${this.m.crashes} 次` : '零碰撞', this.m.illegalPark ? `路中停車 ${this.m.illegalPark} 次` : '', this.m.honked ? `被按喇叭 ${this.m.honked} 次` : ''].filter(Boolean).join('、'), delta: drivePts });
     const prSum = this.m.pr.reduce((a, b) => a + b.score, 0);
@@ -551,7 +551,7 @@ export class FieldDay {
     else { this.lv.update(dt); this.gcp.update(dt); }
     this.updateWater(dt);
 
-    // 導航 (備料時只在上車後顯示)
+    // 導航 (整備儀器時只在上車後顯示)
     const navRef = this.inTruck ? this.truck.pos : p.position;
     const ns = this.nav.update(dt, navRef.x, navRef.z);
     ui.setNav(ns && (!['prep', 'packup'].includes(this.phase) || this.inTruck) ? ns : null);
@@ -862,8 +862,12 @@ export class FieldDay {
       if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
       // 交給學弟裝車而且沒自己檢查過：就照他說的「都裝好了」，少了什麼到現場才會知道
       const sub = this.sub as AnyObj | null;
-      if (sub?.asstLoading) { const a = sub.asst?.g as THREE.Object3D | undefined; return a ? { x: a.position.x, z: a.position.z, label: `等學弟搬完`, reach: 3.0 } : { ...door(), label: '等學弟搬完', reach: 1.3 }; }
+      const asst = sub?.asst?.g as THREE.Object3D | undefined;
+      const atAsst = (label: string) => (asst ? { x: asst.position.x, z: asst.position.z, label, reach: 2.2, obj: asst } : { ...door(), label, reach: 1.3 });
+      if (sub?.asstLoading) return { ...atAsst('等學弟搬完'), obj: undefined, reach: 3.0 };
       if (sub?.asstLoaded && !sub?.asstChecked) return { ...door(), label: '學弟說都裝好了，上車出發', reach: 1.3 };
+      // 一開始選了「交給學弟」：指引帶你去找他
+      if (sub && sub.loadBy === 'asst' && !sub.asstLoaded) return atAsst('跟學弟說，請他去裝車');
       // 還沒裝車的必帶設備：指到它現在放的架子
       for (const it of this.J.required) {
         if (this.grid.has(it)) continue;
@@ -929,7 +933,7 @@ export class FieldDay {
     });
   }
   mobileTakeFromTrunk(uid: number) { this.takeFromTrunk(uid); }
-  /** 備料 / 清點清單用 */
+  /** 整備儀器 / 清點清單用 */
   packList(): { item: ItemId; name: string; loaded: boolean; inHand: boolean }[] {
     return this.J.required.map(it => ({ item: it, name: ITEMS[it].name, loaded: this.grid.has(it), inHand: this.carrying === it }));
   }

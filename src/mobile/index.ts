@@ -112,7 +112,7 @@ import { installDashQte } from './dashQte';
       cam.closeUp = near ? { x: near.position.x, z: near.position.z } : null;
     }
     uavPad();
-    // 進器材室時自動翻開一次備料清單 (玩家不會知道 GNSS 要帶什麼)
+    // 進器材室時自動翻開一次整備儀器清單 (玩家不會知道 GNSS 要帶什麼)
     if (!noteShown && field.phase === 'prep' && !player.isModalOpen() && app.currentLevelObj === field) { noteShown = true; openNote(field); }
     hud.update(dt);
     drive.update(dt);

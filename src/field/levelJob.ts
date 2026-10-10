@@ -77,6 +77,8 @@ export class LevelJob {
   private aJob = '';                    // 學弟的工作狀態
   /** 學弟裝車時必定漏掉的那一件 */
   private asstForgot: ItemId | null = null;
+  /** 整備儀器是自己搬還是交給學弟：''=還沒選 */
+  loadBy: '' | 'me' | 'asst' = '';
   /** 玩家有沒有自己檢查過後斗 (檢查過就不用再瞞著他) */
   asstChecked = false;
   private aT = 0;
@@ -259,7 +261,7 @@ export class LevelJob {
   restore(s: AnyObj) {
     this.reset();
     setAsstName(s.asstName);
-    ['haveStaff', 'havePlate', 'plPlates', 'swapped', 'carrySet', 'asstForgot', 'asstChecked', 'readCount', 'tiltPlanned', 'focus', 'finished', 'bookOut', 'notes', 'holdLog', 'uncleDone', 'dogDone', 'scooterDone', 'aJob', 'aT', 'rodTilt', 'reloc', 'coneBlock', 'policeStage', 'truckDone', 'wrongPlanned', 'wrongDone', 'rodWrong', 'wrongOs', 'caughtWrong', 'kidsDone', 'asstLoaded', 'uncle2', 'mentor']
+    ['haveStaff', 'havePlate', 'plPlates', 'swapped', 'carrySet', 'asstForgot', 'asstChecked', 'loadBy', 'readCount', 'tiltPlanned', 'focus', 'finished', 'bookOut', 'notes', 'holdLog', 'uncleDone', 'dogDone', 'scooterDone', 'aJob', 'aT', 'rodTilt', 'reloc', 'coneBlock', 'policeStage', 'truckDone', 'wrongPlanned', 'wrongDone', 'rodWrong', 'wrongOs', 'caughtWrong', 'kidsDone', 'asstLoaded', 'uncle2', 'mentor']
       .forEach(k => { if (s[k] !== undefined) (this as AnyObj)[k] = s[k]; });
     if (s.cones) {
       this.placeCones(s.cones.x, s.cones.z ?? ROAD_Z + 3.3, !!s.cones.borrowed);
@@ -348,7 +350,7 @@ export class LevelJob {
     this.notes = [];
     this.uncleDone = this.dogDone = this.scooterDone = false;
     this.swapped = false; this.plPlates = false; this.aJob = ''; this.aT = 0;
-    this.asstForgot = null; this.asstChecked = false; this.prepHinted = false;
+    this.asstForgot = null; this.asstChecked = false; this.prepHinted = false; this.loadBy = '';
     this.endHold();
     this.holdLog = [];
     this.clearArrows();
@@ -1579,25 +1581,54 @@ export class LevelJob {
   private asstLoaded = false;
   private handVis: THREE.Object3D | null = null;
 
-  /** 備料階段一開始：告訴玩家可以自己搬，也可以叫學弟搬 */
+  /** 整備儀器階段一開始：告訴玩家可以自己搬，也可以叫學弟搬 */
   onPrep() {
     if (this.prepHinted) return;
     this.prepHinted = true;
-    setTimeout(() => {
-      if (this.fd.phase !== 'prep' || this.asstLoading || this.asstLoaded) return;
-      ui.toast(`今天的設備可以自己從貨架搬上後斗，也可以叫學弟${asstName()}去裝車——跟他講話就會問你。`, 'info', 6000);
-    }, 2600);
+    let tries = 0;
+    const ask = () => {
+      if (this.fd.phase !== 'prep' || this.asstLoading || this.asstLoaded || this.loadBy) return;
+      // 派工單／清單還開著就等一下再問 (最多等 ~30 秒)
+      const busy = document.querySelector('.dialog-backdrop, .modal-backdrop.show, .m-sheet.open, .qte');
+      if (busy && tries++ < 34) { setTimeout(ask, 900); return; }
+      this.askWhoLoads();
+    };
+    setTimeout(ask, 1500);
   }
   private prepHinted = false;
+
+  /** 整備儀器一開始：自己搬，還是交給學弟？(只決定，實際交辦要走過去跟他說) */
+  private askWhoLoads() {
+    ui.showDialog('整備儀器', `今天水準測量要帶的設備都在器材室的貨架上。<br>自己一件一件搬上後斗，還是交給學弟${asstName()}去裝車？`, [
+      { id: 'me', text: '自己搬。東西自己點過比較放心。', reply: '（那就自己來吧。清單在外業手簿裡。）', score: 0, tag: '' },
+      { id: 'asst', text: `交給學弟${asstName()}裝車，我輕鬆一點。`, reply: `（去跟學弟${asstName()}說一聲，叫他把今天要用的搬上後斗。）`, score: 0, tag: '' },
+    ], (o) => {
+      this.loadBy = o.id === 'asst' ? 'asst' : 'me';
+      this.relock();
+      if (this.loadBy === 'asst') {
+        this.fd.panel('prep', `走過去跟學弟${asstName()}說一聲，請他把今天要用的設備搬上後斗。`);
+      } else {
+        ui.toast('設備在器材室的貨架上，一件一件搬到車尾放進後斗。清單可以點左上角的任務提示看。', 'info', 5600);
+        this.fd.panel('prep', '自己整備儀器：到器材室貨架挑今天要用的設備，搬到車尾放進後斗。');
+      }
+    });
+  }
 
   private talkYard(a: Actor) {
     const fd = this.fd;
     if (fd.phase === 'prep' && !this.asstLoading && !this.asstLoaded) {
+      // 一開始已經問過了；玩家反悔要改成交給學弟，講話就直接開始搬
+      if (this.loadBy === 'asst') {
+        ui.faceSpeaker(a.g);
+        ui.toast(`學弟${asstName()}：「好！今天要用的我都搬上後斗。」`, 'good', 3000);
+        this.asstLoad();
+        return;
+      }
       ui.faceSpeaker(a.g);
-      ui.showDialog(`學弟${asstName()}`, '「學長早！今天水準對吧？要我幫忙把東西搬上車嗎？」', [
+      ui.showDialog(`學弟${asstName()}`, '「學長，還是我去裝車就好？」', [
         { id: 'help', text: '「好啊，你幫我把今天要用的搬上後斗。」', reply: '「沒問題！交給我！」', score: 0, tag: '' },
-        { id: 'self', text: '「我自己來，你在旁邊等。」', reply: '「好喔～」', score: 0, tag: '' },
-      ], (o) => { if (o.id === 'help') this.asstLoad(); this.relock(); });
+        { id: 'self', text: '「不用，我自己來。」', reply: '「好喔～」', score: 0, tag: '' },
+      ], (o) => { if (o.id === 'help') { this.loadBy = 'asst'; this.asstLoad(); } this.relock(); });
       return;
     }
     ui.toast(this.asstLoading ? `學弟${asstName()}：「搬東西中，等我一下！」` : `學弟${asstName()}：「東西都好了就出發吧！我坐副駕。」`, 'info', 3000);
@@ -1644,7 +1675,7 @@ export class LevelJob {
         });
       });
     };
-    ui.toast(`學弟${asstName()}開始搬東西上車。出發前最好自己再對一次備料清單。`, 'info', 4200);
+    ui.toast(`學弟${asstName()}開始搬東西上車。出發前最好自己再對一次設備清單。`, 'info', 4200);
     step(0);
   }
 
