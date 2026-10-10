@@ -71,6 +71,7 @@ export function showMainMenu(jobs: MenuJob[], onPick: (id: string) => void) {
     <div class="menu-title" aria-label="鍵盤測量員">
       <kbd class="cap menu-cap cap-accent">鍵</kbd><kbd class="cap menu-cap cap-accent">盤</kbd><kbd class="cap menu-cap">測</kbd><kbd class="cap menu-cap">量</kbd><kbd class="cap menu-cap">員</kbd>
     </div>
+    ${(window as AnyObj).__mobile ? `<p class="menu-ver">手機版　${(document.querySelector('.brand-ver')?.textContent || '').trim()}</p>` : ''}
     <p class="menu-sub">理論滿分，實務……我們現場見。</p>
     <div class="menu-choices">
       ${jobs.map((j, i) => `

@@ -519,3 +519,13 @@ body.heat1 .m-hint, body.heat1 .m-goal { filter: saturate(.85); }
 .rh-vial { position: relative; }
 .rh-tip { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .rh-tip .tip-dot { fill: rgba(250,204,21,.9); stroke: #78350f; stroke-width: 2; }
+
+/* ---------- 標題：鍵帽不是鍵盤操作說明，手機版照常顯示 ---------- */
+kbd.cap.menu-cap, kbd.cap.cap-brand { display: inline-flex !important; }
+.menu-title { flex-wrap: nowrap; gap: 5px; }
+.menu-cap { width: min(17vw, 70px); height: min(17vw, 70px); font-size: min(9vw, 36px); border-radius: 10px; }
+.menu-ver {
+  margin: 8px 0 0; text-align: center; letter-spacing: .08em;
+  font: 700 12px var(--font-ui); color: rgba(255,255,255,.72); text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+.menu-sub { margin: 14px 0 20px; font-size: 17px; }
