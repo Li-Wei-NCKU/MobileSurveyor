@@ -274,6 +274,7 @@ export class UavOps {
         <canvas width="560" height="470"></canvas>
         <div class="up-side">
           <p class="up-tip">在地圖上點一下就是一個航點，照順序連成航線（從起降點 H 出發，飛完自動回來）。<b>按住航點可以拖拉調整</b>；${mob ? '長按航點就刪掉那一點，點「復原」刪最後一個' : '對著航點按右鍵刪掉那一點，Backspace 刪最後一個'}。</p>
+          ${mob ? '<button type="button" class="up-exbtn">看 S 型航線範例</button>' : ''}
           <div class="up-example">
             <svg viewBox="0 0 150 92" aria-hidden="true">
               <rect x="22" y="12" width="106" height="68" fill="none" stroke="#e11d48" stroke-dasharray="4 3" stroke-width="1.5"/>
@@ -287,11 +288,13 @@ export class UavOps {
               <span class="b">拍照間距（藍點）</span> → 決定<b>前後重疊</b>：間距越小越高</div>
           </div>
           <div class="up-need">需求：前後重疊 ≥ ${NEED_FWD * 100}%　側向重疊 ≥ ${NEED_SIDE * 100}%</div>
-          <div class="up-stat"><span>前後重疊 <small>（只看拍照間距）</small></span><b class="s-fwd">—</b></div>
+          <div class="up-stats2">
+            <div class="up-stat"><span>前後重疊 <small>（只看拍照間距）</small></span><b class="s-fwd">—</b></div>
+            <div class="up-stat"><span>側向重疊 <small>（只看航線間距）</small></span><b class="s-side">—</b></div>
+            <div class="up-stat"><span>範圍覆蓋</span><b class="s-cover">—</b></div>
+            <div class="up-stat"><span>航線長度</span><b class="s-len">—</b></div>
+          </div>
           <div class="up-shot">拍照間距 <button data-a="minus">−</button><b class="s-shot"></b><button data-a="plus">＋</button></div>
-          <div class="up-stat"><span>側向重疊 <small>（只看航線間距）</small></span><b class="s-side">—</b></div>
-          <div class="up-stat"><span>範圍覆蓋</span><b class="s-cover">—</b></div>
-          <div class="up-stat"><span>航線長度</span><b class="s-len">—</b></div>
           <div class="up-btns">
             <button data-a="undo">復原</button>
             <button data-a="clear">清除</button>
@@ -412,7 +415,16 @@ export class UavOps {
       }
       draw();
     };
+    // 直式手機：按鈕移到面板最下面 (不跟著內容捲動)
+    if (mob) { const pad = d.querySelector('.up-pad'), bt = d.querySelector('.up-btns'); if (pad && bt) pad.appendChild(bt); }
     d.querySelectorAll<HTMLButtonElement>('button[data-a]').forEach(b => b.onclick = () => act(b.dataset.a!));
+    const ex = d.querySelector('.up-exbtn') as HTMLButtonElement | null;
+    if (ex) ex.onclick = (ev) => {
+      ev.stopPropagation();
+      const box = d.querySelector('.up-example') as HTMLElement | null;
+      const open = box?.classList.toggle('open');
+      ex.textContent = open ? '收起範例' : '看 S 型航線範例';
+    };
     const onKey = (e: KeyboardEvent) => {
       if (!this.planEl) { window.removeEventListener('keydown', onKey, true); return; }
       e.stopPropagation();

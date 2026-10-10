@@ -449,6 +449,8 @@ export class FieldDay {
     this.exitTruck(true);
     const S = this.J.site;
     const leftAtSite = this.ground.filter(g => Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
+    const leftExtra: string[] = (this.sub as AnyObj)?.leftBehind?.() || [];
+    const leftNames = [...leftAtSite.map(g => ITEMS[g.item].name), ...leftExtra];
     const extras = this.grid.placed.filter(p => !this.J.required.includes(p.item) && !['drone', 'water', 'totalstation'].includes(p.item));
     const rows: ui.ReportRow[] = [];
     if (this.job === 'level') rows.push(this.lv.reportRow());
@@ -464,8 +466,8 @@ export class FieldDay {
     const prSum = this.m.pr.reduce((a, b) => a + b.score, 0);
     const prPts = Math.max(0, Math.min(10, 5 + prSum));
     rows.push({ label: '民眾應對', detail: this.m.pr.length ? this.m.pr.map(x => x.tag).join('；') : '沒遇到路人', delta: prPts });
-    const leftPts = Math.max(0, 15 - leftAtSite.length * 10);
-    rows.push({ label: '收工清點', detail: leftAtSite.length ? `${leftAtSite.map(g => ITEMS[g.item].name).join('、')} 留在現場` : '一件不少帶回公司', delta: leftPts });
+    const leftPts = Math.max(0, 15 - leftNames.length * 10);
+    rows.push({ label: '收工清點', detail: leftNames.length ? `${leftNames.join('、')} 留在現場` : '一件不少帶回公司', delta: leftPts });
     const total = Math.max(0, Math.min(100, rows.reduce((s, r) => s + r.delta, 0)));
     let title = '工讀生', comment = '';
     if (total >= 90) { title = '外業組長'; comment = '流程俐落、設備齊全、跟阿伯也聊得來。下次派工單就由你寫了。'; }
@@ -841,15 +843,17 @@ export class FieldDay {
       const S = this.J.site;
       const here = (it: ItemId) => this.carrying === it || this.extraCarry === it || this.grid.has(it)
         || this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
-      const want = [...this.m.forgot].find(it => !here(it));
+      const left = [...this.m.forgot].filter(it => !here(it));
+      const want = left[0];
+      const more = left.length > 1 ? `（還有 ${left.length - 1} 件）` : '';
       const pp = this.app.player.position;
       const atYard = Math.hypot(pp.x - YARD.x, pp.z - YARD.z) < 32;
       if (want) {
         if (atYard) {
           const g = this.ground.find(x => x.item === want);
-          if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `拿${nm(want)}（剛剛忘了帶）`, reach: 1.1, obj: g.obj };
+          if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `拿${nm(want)}（剛剛忘了帶）${more}`, reach: 1.1, obj: g.obj };
         }
-        return { ...door(), label: `哎呀！忘了帶${nm(want)}，開車回公司拿吧`, reach: 1.3 };
+        return { ...door(), label: `哎呀！忘了帶${left.map(nm).join('、')}，開車回公司拿吧`, reach: 1.3 };
       }
       if (atYard) return { ...door(), label: '東西拿到了，開車回現場', reach: 1.3 };
     }
@@ -858,6 +862,7 @@ export class FieldDay {
       if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
       // 交給學弟裝車而且沒自己檢查過：就照他說的「都裝好了」，少了什麼到現場才會知道
       const sub = this.sub as AnyObj | null;
+      if (sub?.asstLoading) { const a = sub.asst?.g as THREE.Object3D | undefined; return a ? { x: a.position.x, z: a.position.z, label: `等學弟搬完`, reach: 3.0 } : { ...door(), label: '等學弟搬完', reach: 1.3 }; }
       if (sub?.asstLoaded && !sub?.asstChecked) return { ...door(), label: '學弟說都裝好了，上車出發', reach: 1.3 };
       // 還沒裝車的必帶設備：指到它現在放的架子
       for (const it of this.J.required) {
@@ -881,6 +886,8 @@ export class FieldDay {
         const g = left.slice().sort((a, b) => a.obj.position.distanceToSquared(p) - b.obj.position.distanceToSquared(p))[0];
         return { x: g.obj.position.x, z: g.obj.position.z, label: `搬回後斗：${nm(g.item)}`, reach: 1.3, obj: g.obj };
       }
+      const cone = (this.sub as AnyObj)?.coneToCollect?.();
+      if (cone) return { x: cone.x, z: cone.z, label: '交通錐還擺在路邊，去收起來', reach: 1.3, obj: cone.obj };
       return { ...door(), label: '東西都收好了，上車回公司', reach: 1.3 };
     }
     // 現場：第一天 GNSS

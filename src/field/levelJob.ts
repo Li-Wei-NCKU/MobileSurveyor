@@ -16,7 +16,7 @@ import { LEVEL_ROUTE, loadProgress, type Progress, asstName, setAsstName, pickAs
 import { buildLevelStaff, buildTurningPlate, PLATE_TOP } from './levelStaff';
 import { buildPerson, animateWalk, buildDog, animateDog, buildScooter, buildLorry, ROAD_Z } from './npc';
 import { levelScope } from './scope';
-import { attachHoldPad, isMobile, type PadVec } from './holdPad';
+import { attachHoldPad, isMobile, type PadVec, rodHintOn, rodHintDone } from './holdPad';
 import { bench } from './bench';
 import { playBossIntro, setThreat } from './cine';
 import { dust, phonePhoto, GroundRing, Rumble } from './fx';
@@ -461,7 +461,7 @@ export class LevelJob {
     this.lorryTick(dt, p);
     const threats: { obj: THREE.Object3D; h: number; who: string; dist: number; target?: string }[] = this.actors.filter(a => a.kind === 'dog' && a.state === 'rush' && this.inst).map(a => ({ obj: a.g, h: 0.9, who: '阿黃', dist: Math.hypot(a.g.position.x - this.inst!.position.x, a.g.position.z - this.inst!.position.z), target: '儀器' }));
     const tp = this.kidTarget();
-    if (tp) this.actors.filter(a => a.kind === 'kid' && a.state === 'kidRush').forEach(a => threats.push({ obj: a.g, h: 1.4, who: '小朋友', dist: Math.hypot(a.g.position.x - tp.x, a.g.position.z - tp.z), target: '鐵墊' }));
+    if (tp) this.actors.filter(a => a.kind === 'kid' && a.state === 'kidRush').forEach(a => threats.push({ obj: a.g, h: 1.4, who: '小朋友', dist: Math.hypot(a.g.position.x - tp.x, a.g.position.z - tp.z), target: tp.plate ? '鐵墊' : '標尺' }));
     setThreat(this.fd.app, threats);
   }
 
@@ -636,10 +636,13 @@ export class LevelJob {
         if (Math.hypot(p.x - a.g.position.x, p.z - a.g.position.z) < 3.5 && !this.fd.app.player.isModalOpen()) {
           this.actors.filter(k => k.kind === 'kid').forEach(k => { k.state = 'listen'; k.t = 0; });
           ui.faceSpeaker(a.g);
-          ui.showDialog('昨天的小朋友', '「哥哥！我們幫你顧著這個鐵餅喔，都沒有人碰！」', [
-            { text: '「謝謝你們！這叫鐵墊，很重要的，動到就要重測。」', reply: '「我們很厲害吧！掰掰～」', score: 2, tag: '昨天的小朋友幫忙顧鐵墊', id: 'a' },
-            { text: '「好，謝謝。快回家吧。」', reply: '「掰掰～」', score: 1, tag: '昨天的小朋友幫忙顧鐵墊', id: 'b' },
-          ], (o) => { this.fd.addPR(o.score, o.tag); tell('第一天耐心攔下小朋友', '今天他們自己跑來幫你顧鐵墊'); this.kidsGo(); this.relock(); });
+          const hasPlate = !!(tp && tp.plate);
+          const what = hasPlate ? '鐵餅' : '尺';
+          const tag = hasPlate ? '昨天的小朋友幫忙顧鐵墊' : '昨天的小朋友幫忙顧轉點的尺';
+          ui.showDialog('昨天的小朋友', `「哥哥！我們幫你顧著這${hasPlate ? '個' : '根'}${what}喔，都沒有人碰！」`, [
+            { text: hasPlate ? '「謝謝你們！這叫鐵墊，很重要的，動到就要重測。」' : '「謝謝你們！這叫標尺，動到就要重測。」', reply: '「我們很厲害吧！掰掰～」', score: 2, tag, id: 'a' },
+            { text: '「好，謝謝。快回家吧。」', reply: '「掰掰～」', score: 1, tag, id: 'b' },
+          ], (o) => { this.fd.addPR(o.score, o.tag); tell('第一天耐心攔下小朋友', hasPlate ? '今天他們自己跑來幫你顧鐵墊' : '今天他們自己跑來幫你顧轉點的尺'); this.kidsGo(); this.relock(); });
         }
         return;
       }
@@ -923,8 +926,21 @@ export class LevelJob {
     if (this.bookOut) return true;
     const fd = this.fd;
     const ix = this.inst!.position.x, iz = this.inst!.position.z;
-    const ok = fd.carrying === 'toolbag' || fd.ground.some(g => g.item === 'toolbag' && Math.hypot(g.obj.position.x - ix, g.obj.position.z - iz) < 8);
-    if (ok) { this.bookOut = true; ui.toast('從工具袋拿出水準手簿。工具袋收工時記得帶走。', 'info', 3000); }
+    const onGround = fd.ground.some(g => g.item === 'toolbag' && Math.hypot(g.obj.position.x - ix, g.obj.position.z - iz) < 8);
+    const inHand = fd.carrying === 'toolbag';
+    const ok = inHand || onGround;
+    if (ok) {
+      this.bookOut = true;
+      // 手上拿著就順手放在儀器旁邊，免得之後指前視點還要先放下
+      if (inHand && !onGround) {
+        const gx = ix + 1.0, gz = iz + 0.8;
+        fd.consumeHeld();
+        fd.spawnGround('toolbag', V(gx, this.sm.heightAt(gx, gz), gz), 0);
+        ui.toast('從工具袋拿出水準手簿，順手把袋子放在儀器旁邊。收工記得帶走。', 'info', 3600);
+      } else {
+        ui.toast('從工具袋拿出水準手簿。工具袋收工時記得帶走。', 'info', 3000);
+      }
+    }
     return ok;
   }
 
@@ -940,7 +956,7 @@ export class LevelJob {
     const stop = this.workBlocked();
     if (stop) { sfx.error(); ui.toast(stop, 'warn', 3000); return; }
     // 第一站讀前視時：大貨車經過
-    if (!back && !this.swapped && this.stations.length === 1 && !this.truckDone) { this.truckDone = true; setTimeout(() => this.spawnLorry(), 1500); }
+    if (!back && !this.swapped && this.stations.length === 1 && !this.truckDone) { this.truckDone = true; setTimeout(() => this.spawnLorry(), 500); }
     if (!this.toolbagHere()) { fd.needItem('toolbag'); ui.toast('水準手簿在外業工具袋裡。工具袋拿過來放在儀器附近。', 'info', 4000); return; }
     if (!this.lv.isLeveled && this.instState === 'leveled' && !this.notes.includes('補償器警示')) {
       // 氣泡沒進圈：補償器超出範圍，讀數會偏
@@ -1294,7 +1310,7 @@ export class LevelJob {
       // 學弟把尺轉向新的測站
       this.book(this.stations);
       this.nextHint();
-      if (!this.uncleDone && this.stations.length === 1) setTimeout(() => this.spawnUncle(), 9000);
+      if (!this.uncleDone && this.stations.length === 1) setTimeout(() => this.spawnUncle(), 4000);
       return true;
     }
     const st = this.cur;
@@ -1367,7 +1383,7 @@ export class LevelJob {
   }
 
   /** 手機版任務指引：下一步要去哪 */
-  mobileGuide(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
+  mobileGuide(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D; item?: ItemId } | null {
     const fd = this.fd;
     if (fd.inTruck || !['site', 'observe'].includes(fd.phase)) return null;
     const inst = this.inst;
@@ -1414,10 +1430,45 @@ export class LevelJob {
       return fromTruck('level', '從後斗拿自動水準儀箱') || { ...at, label: '裝水準儀' };
     }
     if (this.instState === 'mounted') return { ...at, label: '整平水準儀' };
+    // 要讀數了但手簿 (工具袋) 不在儀器旁邊：帶玩家去拿 (地上 → 後斗 → 忘在公司)
+    if (!this.swapped && !this.bookOut && this.inst && this.stations.length) {
+      const S = this.fd.J.site;
+      const ix = this.inst.position.x, iz = this.inst.position.z;
+      const near = fd.ground.find(x => x.item === 'toolbag' && Math.hypot(x.obj.position.x - ix, x.obj.position.z - iz) < 8);
+      if (!near && fd.carrying !== 'toolbag') {
+        const onSite = fd.ground.find(x => x.item === 'toolbag' && Math.hypot(x.obj.position.x - S.x, x.obj.position.z - S.z) < S.r);
+        if (onSite) return { x: onSite.obj.position.x, z: onSite.obj.position.z, label: '拿外業工具袋（手簿在裡面）', reach: 1.3, obj: onSite.obj, item: 'toolbag' };
+        const t = fromTruck('toolbag', '從後斗拿外業工具袋（手簿在裡面）');
+        if (t) return { ...t, item: 'toolbag' as ItemId };
+        const far = fd.ground.find(x => x.item === 'toolbag');
+        if (far) return { x: far.obj.position.x, z: far.obj.position.z - 2.4, label: '拿外業工具袋（忘了帶）', reach: 1.1, obj: far.obj, item: 'toolbag' };
+        const dr = fd.truck.toWorld(0.95, 0, 2.1);
+        return { x: dr.x, z: dr.z, label: '哎呀！忘了帶外業工具袋，開車回公司拿吧', reach: 1.3, obj: fd.truck.cabHit as THREE.Object3D, item: 'toolbag' as ItemId };
+      }
+      if (fd.carrying === 'toolbag') return { ...at, label: '把工具袋放到儀器旁邊', reach: 1.6 };
+    }
     // leveled：看現在輪到誰
     if (this.swapped) {
-      const pt = this.rodAt;
-      if (pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `去扶尺（${pt.name}）`, reach: 1.0 }; }
+      const st2 = this.cur;
+      // 手上拿著尺：往前視點走
+      if (fd.carrying === 'staff') {
+        const q = this.rodXZ(this.bm2);
+        return { x: q.x, z: q.z, label: `拿著標尺去 ${this.bm2.name} 立尺`, reach: 1.1 };
+      }
+      // 後視讀完、還沒放前視：先去把尺拿起來
+      if (this.canPickRod() && this.rodAt) {
+        const q = this.rodXZ(this.rodAt);
+        return { x: q.x + 0.8, z: q.z + 0.5, label: '把標尺拿起來往前走', reach: 1.0, obj: this.staff };
+      }
+      // 學弟還在搬儀器／整平：到下一個要扶的點等
+      if (['toInst', 'toStation', 'leveling'].includes(this.aJob) && this.rodAt) {
+        const q = this.rodXZ(this.rodAt);
+        return { x: q.x + 0.9, z: q.z + 0.5, label: `到 ${this.rodAt.name} 旁邊等學弟架好`, reach: 1.1 };
+      }
+      const want = this.aJob === 'waitFore' || this.aJob === 'readFore' ? st2?.fore?.pt : st2?.back.pt;
+      const pt = want || this.rodAt;
+      if (pt && this.rodAt === pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `去扶尺（${pt.name}）`, reach: 1.0 }; }
+      if (pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `到 ${pt.name}`, reach: 1.1 }; }
       return null;
     }
     const st = this.cur;
@@ -1882,6 +1933,16 @@ export class LevelJob {
     if (this.coneBlock && valid) { this.coneBlock = false; ui.toast('交通錐擺對了，可以繼續作業。', 'good', 2600); }
   }
 
+  /** 收工清點時還留在現場、但不是「地上物件」的東西 */
+  leftBehind(): string[] {
+    return this.coneObj && !this.cones?.borrowed ? [ITEMS.cones.name] : [];
+  }
+  /** 收工指引：還沒收的交通錐 */
+  coneToCollect(): { x: number; z: number; obj: THREE.Object3D } | null {
+    if (!this.coneObj || this.cones?.borrowed) return null;
+    return { x: this.cones!.x, z: this.cones!.z, obj: this.coneObj };
+  }
+
   private removeCones() {
     if (!this.coneObj) return;
     this.sm.scene.remove(this.coneObj);
@@ -1946,7 +2007,12 @@ export class LevelJob {
       this.pcar = new PoliceCar(this.sm.scene, h, { path: [[ix - Math.min(far, 140), lane], [ix - 25, lane], [ix + 15, lane], [ix + 260, lane]], slowFrom: 2, siren: false, pass: true });
       this.pcar.lights = false;
       this.policeStage = 'done';
-      setTimeout(() => { if (this.fd.job !== 'level') return; ui.toast('一台警車慢慢經過，看到交通錐，警察比了個讚。', 'good', 3500); this.fd.addPR(1, '有擺交通錐，巡邏警車比讚'); }, near ? 4000 : 8500);
+      setTimeout(() => {
+        if (this.fd.job !== 'level') return;
+        ui.toast('🚓 巡邏警車慢慢經過，警察看到你們的交通錐，隔著窗戶比了個讚。', 'good', 5200);
+        ui.thought('（還好有擺交通錐。）', 4200);
+        this.fd.addPR(1, '有擺交通錐，巡邏警車比讚');
+      }, near ? 3500 : 6000);
       return;
     }
     this.pcar = new PoliceCar(this.sm.scene, h, { path: [[ix - far, lane], [ix - 30, lane], [ix - 17, lane], [ix - 10, ROAD_Z + 3.3]], slowFrom: 2, siren: false, pass: false });
@@ -2012,7 +2078,7 @@ export class LevelJob {
     if (!this.inst || this.lorry) return;
     const g = buildLorry();
     g.rotation.y = Math.PI; // 朝 -X
-    const x = this.inst.position.x + 80, z = ROAD_Z - 1.7;
+    const x = this.inst.position.x + 52, z = ROAD_Z - 1.7;
     g.position.set(x, this.sm.heightAt(x, z), z);
     this.sm.scene.add(g);
     this.lorry = g;
@@ -2024,7 +2090,7 @@ export class LevelJob {
     this.vibe = Math.max(0, this.vibe - dt * 0.35);
     const g = this.lorry;
     if (!g) return;
-    g.position.x -= 14 * dt;
+    g.position.x -= 17 * dt;
     g.position.y = this.sm.heightAt(g.position.x, g.position.z);
     const ix = this.inst ? this.inst.position.x : p.x;
     this.vibe = Math.max(this.vibe, Math.max(0, 1 - Math.abs(g.position.x - ix) / 26));
@@ -2078,18 +2144,19 @@ export class LevelJob {
     const k1 = this.spawn('kid', tp.x + 7, 66), k2 = this.spawn('kid', tp.x + 8.2, 67);
     if (kids === 'stopped') {
       k1.state = k2.state = 'kidGuard'; k2.cd = 0.9;
-      ui.toast('昨天那兩個小朋友又來了，跑到 TP1 的鐵墊旁邊……', 'info', 3500);
+      ui.toast(`昨天那兩個小朋友又來了，跑到 ${tp.name} 的${tp.plate ? '鐵墊' : '標尺'}旁邊……`, 'info', 3500);
       return;
     }
     k1.state = k2.state = 'intro';
     if (bench.mode) bench.exit(false);
     if (levelScope.active) levelScope.close();
-    const go = () => { k1.state = 'kidRush'; k2.state = 'kidFollow'; ui.toast('鐵墊被動到就要從 BM-1035 重測！快去擋住小朋友！', 'warn', 4000); };
+    const what = tp.plate ? '鐵墊' : '轉點的尺';
+    const go = () => { k1.state = 'kidRush'; k2.state = 'kidFollow'; ui.toast(`${what}被動到就要從 BM-1035 重測！快去擋住小朋友！`, 'warn', 4000); };
     if (this.fd.inTruck || document.querySelector('.field-modal')) { go(); return; }
     playBossIntro(this.fd.app, {
       subject: k1.g, target: V(tp.x, this.sm.heightAt(tp.x, tp.z), tp.z), eye: 0.95,
-      name: kids === 'bumped' ? '昨天的小朋友 ×2' : '放學小朋友 ×2', sub: '目標：鐵墊',
-      tagline: kids === 'bumped' ? '「欸！那個鐵餅可以踢嗎？」' : '「那個鐵的是什麼？可以玩嗎？」',
+      name: kids === 'bumped' ? '昨天的小朋友 ×2' : '放學小朋友 ×2', sub: `目標：${what}`,
+      tagline: tp.plate ? (kids === 'bumped' ? '「欸！那個鐵餅可以踢嗎？」' : '「那個鐵的是什麼？可以玩嗎？」') : '「欸！那根尺可以推嗎？」',
     }, go);
   }
 
@@ -2389,7 +2456,7 @@ export class LevelJob {
     el.className = 'rodhold enter';
     el.innerHTML = `
       <div class="rh-title">扶尺　${pt.name}</div>
-      <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
+      <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b>${isMobile() && rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>
       <div class="rh-prog"><i></i></div>
       <div class="rh-msg"></div>
       <div class="rh-keys">${isMobile() ? '手指按在水準器上，往哪邊按就往哪邊扶' : '<kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手'}</div>
@@ -2409,6 +2476,11 @@ export class LevelJob {
     window.addEventListener('keyup', this.onHoldKey, true);
     if (isMobile()) {
       this.holdPad.x = 0; this.holdPad.y = 0;
+      if (rodHintOn()) {
+        ui.toast('手指按在圓圈上不要放，往哪邊按，尺就往哪邊扶——把氣泡壓回中間就好。', 'info', 6000);
+        const drop = () => { rodHintDone(); el.querySelectorAll('.rh-tip').forEach(e => e.remove()); };
+        el.querySelector('.rh-vial')?.addEventListener('pointerdown', drop, { once: true });
+      }
       this.holdDetach = attachHoldPad(el.querySelector('.rh-vial'), this.holdPad);
       const letGo = el.querySelector('.rh-let') as HTMLButtonElement | null;
       if (letGo) letGo.onclick = (ev) => { ev.stopPropagation(); this.endHold(); this.swapHint(); };
@@ -2445,12 +2517,12 @@ export class LevelJob {
     if (!h) return;
     const k = this.holdKeys;
     // 風吹 + 手抖：隨機推力；玩家用 WASD 修正
-    const gust = 1.4 + Math.sin(this.time * 0.7) * 0.6;
+    const gust = 0.85 + Math.sin(this.time * 0.7) * 0.3;
     const px = (k.r ? 1 : 0) - (k.l ? 1 : 0) + this.holdPad.x;
     const py = (k.d ? 1 : 0) - (k.u ? 1 : 0) + this.holdPad.y;
-    h.vx += ((Math.random() - 0.5) * gust + px * 2.4) * dt;
-    h.vy += ((Math.random() - 0.5) * gust + py * 2.4) * dt;
-    const damp = Math.pow(0.3, dt);
+    h.vx += ((Math.random() - 0.5) * gust + px * 3.4) * dt;
+    h.vy += ((Math.random() - 0.5) * gust + py * 3.4) * dt;
+    const damp = Math.pow(0.16, dt);
     h.vx *= damp; h.vy *= damp;
     h.bx += h.vx * dt * 2; h.by += h.vy * dt * 2;
     const r = Math.hypot(h.bx, h.by);
@@ -2463,7 +2535,7 @@ export class LevelJob {
     this.trackAsst(dt);
     const bub = h.el.querySelector('.rh-bub') as HTMLElement;
     bub.style.transform = `translate(${h.bx * 46}px, ${h.by * 46}px)`;
-    bub.classList.toggle('ok', Math.hypot(h.bx, h.by) < 0.28);
+    bub.classList.toggle('ok', Math.hypot(h.bx, h.by) < 0.38);
     const prog = h.el.querySelector('.rh-prog i') as HTMLElement;
     prog.style.width = reading ? `${Math.round((1 - Math.max(0, this.aT) / 2.6) * 100)}%` : '0%';
     const msg = h.el.querySelector('.rh-msg') as HTMLElement;

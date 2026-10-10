@@ -41,3 +41,11 @@ export function attachHoldPad(vial: HTMLElement | null, vec: PadVec): () => void
 }
 
 export const isMobile = () => !!(window as unknown as { __mobile?: unknown }).__mobile;
+
+/** 扶桿子／扶尺的第一次動畫提示 (手機版)：用過一次就不再出現 */
+export function rodHintOn(): boolean {
+  try { return !localStorage.getItem('ks-m-hold-hint'); } catch { return true; }
+}
+export function rodHintDone() {
+  try { localStorage.setItem('ks-m-hold-hint', '1'); } catch { /* 無痕模式 */ }
+}

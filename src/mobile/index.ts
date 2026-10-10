@@ -61,7 +61,7 @@ import { installDashQte } from './dashQte';
   setTextFilter(fixKeyboardText);
   const origPanel = app.updateMissionPanel.bind(app);
   (app as AnyObj).updateMissionPanel = (title: string, tasks: AnyObj[], i: number, hint: string) =>
-    origPanel(title, tasks, i, typeof hint === 'string' ? (fixText(hint)) : hint);
+    origPanel(title, (tasks || []).map(t => (typeof t === 'string' ? fixText(t) : t && typeof (t as AnyObj).text === 'string' ? { ...t, text: fixText((t as AnyObj).text) } : t)), i, typeof hint === 'string' ? fixText(hint) : hint);
 
   // 對話時：人偶轉向對方、相機把兩人框進來
   setFaceHook((o, also) => {

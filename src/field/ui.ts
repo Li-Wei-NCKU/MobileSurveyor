@@ -107,6 +107,7 @@ export function dismissWorkOrder() {
   document.getElementById('work-order')?.remove();
 }
 export function showWorkOrder(wo: { seq: string; item: string; place: string; spec: string; note: string; gear?: string }, onAccept: () => void) {
+  wo = { ...wo, item: fixText(wo.item), place: fixText(wo.place), spec: fixText(wo.spec), note: fixText(wo.note), gear: wo.gear ? fixText(wo.gear) : wo.gear };
   const box = el('div', 'paper workorder');
   const today = new Date();
   const d = `${today.getFullYear() - 1911} 年 ${today.getMonth() + 1} 月 ${today.getDate()} 日`;

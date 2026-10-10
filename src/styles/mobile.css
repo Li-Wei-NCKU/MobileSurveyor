@@ -347,6 +347,17 @@ body.scope-active .scope-focus .sf-bar i { left: -7px; width: 48px; height: 7px;
 .m-look { position: fixed; inset: 0; z-index: 38; touch-action: none; }
 .m-look span { position: absolute; left: 50%; bottom: calc(var(--sab) + 120px); transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: rgba(20,29,38,.7); color: #fff; font: 600 12px var(--font-ui); }
 .m-look.on span { opacity: 0; }
+.m-look-zoom {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 8px 6px; border-radius: 999px; background: rgba(20,29,38,.62);
+}
+.m-look-zoom button {
+  width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.14); color: #fff; font: 800 22px/1 var(--font-ui);
+  display: flex; align-items: center; justify-content: center; touch-action: manipulation;
+}
+.m-look-x { color: #fff; font: 800 13px var(--font-ui); font-variant-numeric: tabular-nums; }
 body.phone-cam .pv-keys { display: none; }
 .m-uav { position: fixed; inset: auto 0 0 0; z-index: 44; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 14px calc(var(--sab) + 14px); pointer-events: none; }
 .m-uav button { pointer-events: auto; border: 1px solid var(--glass-line); background: var(--glass); backdrop-filter: blur(8px); color: #fff; font: 800 15px var(--font-ui); border-radius: 14px; }
@@ -453,3 +464,58 @@ body.heat1 .m-hint, body.heat1 .m-goal { filter: saturate(.85); }
 .m-dash-go small { font: 800 13px var(--font-ui); opacity: .72; }
 .m-dash-go.hit { animation: m-dash-pop .13s ease-out; }
 @keyframes m-dash-pop { from { transform: scale(.88); } to { transform: scale(1); } }
+
+/* ---------- 第三天：外業地圖 (平板) ---------- */
+.gcp-tablet {
+  left: 10px; right: 10px; width: auto; animation: none; z-index: 42;
+  top: calc(104px + env(safe-area-inset-top));
+  padding: 10px 10px 8px; pointer-events: auto;
+  max-height: calc(100vh - 250px - env(safe-area-inset-top)); overflow: auto;
+}
+.gcp-tablet canvas { width: 100% !important; max-width: none !important; }
+.gt-head { font-size: 15px; align-items: center; }
+.gt-close {
+  pointer-events: auto; min-width: 64px; min-height: 34px; padding: 0 12px; border-radius: 10px;
+  border: 1.5px solid #4b5563; background: #374151; color: #e5e7eb; font: 800 14px var(--font-ui);
+}
+.gt-foot, .gt-list { font-size: 12.5px; }
+
+/* ---------- 第三天：航線規劃 (直式) ---------- */
+.uav-plan .up-pad {
+  width: calc(100vw - 16px); max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; padding: 10px 10px 8px; overflow: hidden;
+}
+.uav-plan .up-head { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 6px; font-size: 14px; }
+.uav-plan .up-head span { font-size: 11.5px; line-height: 1.4; }
+.uav-plan .up-body { flex-direction: column; gap: 8px; overflow: auto; flex: 1; min-height: 0; }
+.uav-plan .up-body canvas { width: 100% !important; max-width: none !important; height: auto; }
+.uav-plan .up-side { gap: 6px; font-size: 13px; }
+.uav-plan .up-tip { font-size: 12px; line-height: 1.5; }
+/* 範例圖收起來，要看再點 */
+.uav-plan .up-example { display: none; }
+.uav-plan .up-example.open { display: flex; }
+.uav-plan .up-exbtn {
+  align-self: flex-start; padding: 5px 10px; border-radius: 8px; border: 1px solid #4b5563;
+  background: #374151; color: #cbd5e1; font: 700 12px var(--font-ui);
+}
+/* 數據兩欄排，省高度 */
+.uav-plan .up-stats2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.uav-plan .up-stat { padding: 3px 0; font-size: 12.5px; flex-direction: column; align-items: flex-start; gap: 0; }
+.uav-plan .up-stat > span { color: #9ca3af; }
+.uav-plan .up-stat b { font-size: 15px; }
+.uav-plan .up-stat small { display: none; }
+.uav-plan .up-shot { font-size: 12.5px; }
+.uav-plan .up-shot button { width: 38px; height: 34px; font-size: 16px; }
+/* 按鈕固定在最下面，不會被捲掉 */
+.uav-plan .up-btns {
+  flex: none; margin-top: 8px; padding-top: 8px; grid-template-columns: 1fr 1fr; gap: 6px;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.uav-plan .up-btns button { min-height: 46px; font-size: 14px; }
+.uav-plan .up-btns .up-fly { grid-column: 1 / -1; }
+.uav-plan .up-btns button[data-a="close"] { grid-column: 1 / -1; }
+
+/* ---------- 扶尺／扶桿：第一次的手指動畫提示 ---------- */
+.rh-vial { position: relative; }
+.rh-tip { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.rh-tip .tip-dot { fill: rgba(250,204,21,.9); stroke: #78350f; stroke-width: 2; }

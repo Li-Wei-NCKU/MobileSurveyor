@@ -267,6 +267,25 @@ export class GcpJob {
       this.askedWhere = true;
       setTimeout(() => ui.toast(`學弟${asstName()}：「學長，請告訴我要在哪裡佈標！（看著地面按 E）」`, 'info', 5000), 700);
     }
+    // 噴漆、拍照的時候學弟緊跟在「玩家後面」，不要擋住鏡頭
+    const tuck = gcpBench.active || !!this.phone;
+    if (tuck) {
+      const pl = this.fd.app.player as AnyObj;
+      let tx: number, tz: number;
+      if (this.phone) {
+        // 第一人稱取景：躲到玩家背後
+        const yaw = (pl.euler?.y ?? 0) as number;
+        tx = p.x + Math.sin(yaw) * 2.2; tz = p.z + Math.cos(yaw) * 2.2;
+      } else {
+        // 2.5D 俯視：鏡頭在北邊，所以站到玩家南邊 (+z)
+        tx = p.x + 1.5; tz = p.z + 2.4;
+      }
+      if (Math.hypot(a.g.position.x - tx, a.g.position.z - tz) > 0.5) this.walk(tx, tz, 3.0, dt);
+      else { this.face(p.x, p.z); animateWalk(a.g, a.t, 0); }
+      if (this.map) this.drawMap();
+      this.ev.update(dt);
+      return;
+    }
     if (!gcpBench.active) {
       switch (a.state) {
         case 'goto':
@@ -516,7 +535,10 @@ export class GcpJob {
       sfx.pickup();
       const n = this.gcps.length;
       ui.toast(`${name} 佈設完成。`, 'good', 2600);
-      setTimeout(() => ui.thought(`接下來要對著 ${name} 按 E，用 RTK 測坐標。`, 5500), 1200);
+      setTimeout(() => {
+        ui.toast(`${name} 佈好了！接下來這個點要做兩件事：① 對著標用 RTK 測坐標　② 用「手機拍照」拍近照 1 張＋遠照 2 張。`, 'info', 7000);
+        ui.thought('（工單要四角＋中央，每個點都要測坐標、拍照。）', 5200);
+      }, 1200);
     }
     this.refreshHint();
   }
@@ -1270,9 +1292,9 @@ export class GcpJob {
       return { x: t.x, z: t.z, label: '去後斗拿噴漆箱', reach: 1.4, obj: fd.truck.tailHit as THREE.Object3D };
     }
     const noRtk = this.gcps.find(g => !g.rtk);
-    if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name}`, reach: 1.0 };
+    if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name} 的坐標`, reach: 1.0 };
     const noPhoto = this.gcps.find(g => !g.photos.close || g.photos.wide.length < 2);
-    if (noPhoto && this.gcps.length >= 4) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, label: `拍 ${noPhoto.name} 的點位照片`, reach: 1.2 };
+    if (noPhoto) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, label: `拍 ${noPhoto.name} 的點位照片（近 1 ＋ 遠 2）`, reach: 1.2 };
     if (this.gcps.length < 4) return null;             // 位置要自己挑
     const a = this.asst?.g;
     if (a) return { x: a.position.x, z: a.position.z, label: '跟學弟說可以收工了', reach: 2.0, obj: a as THREE.Object3D };
@@ -1309,8 +1331,11 @@ export class GcpJob {
   private openMap() {
     const d = document.createElement('div');
     d.className = 'gcp-tablet';
-    d.innerHTML = '<div class="gt-head"><b>外業地圖（航測範圍）</b><span>Q 收起</span></div><canvas width="520" height="430"></canvas><div class="gt-foot">比例尺 10 m　紅框：航測範圍（四角＋中央各一點）</div><div class="gt-list"></div>';
+    const mob = !!(window as AnyObj).__mobile;
+    d.innerHTML = `<div class="gt-head"><b>外業地圖（航測範圍）</b>${mob ? '<button type="button" class="gt-close">收起</button>' : '<span>Q 收起</span>'}</div><canvas width="520" height="430"></canvas><div class="gt-foot">比例尺 10 m　紅框：航測範圍（四角＋中央各一點）</div><div class="gt-list"></div>`;
     document.body.appendChild(d);
+    const cl = d.querySelector('.gt-close') as HTMLButtonElement | null;
+    if (cl) cl.onclick = (ev) => { ev.stopPropagation(); this.closeMap(); };
     this.map = d;
     this.mapCanvas = d.querySelector('canvas');
     this.hintedTablet = true;

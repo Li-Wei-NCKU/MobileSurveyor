@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import type { GameApp } from './legacy';
 import { SM } from './legacy';
 import * as ui from './ui';
-import { attachHoldPad, isMobile, type PadVec } from './holdPad';
+import { attachHoldPad, isMobile, rodHintOn, rodHintDone, type PadVec } from './holdPad';
 import * as sfx from './sfx';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -104,7 +104,7 @@ class RtkBench {
       <div class="bench-card paper rtk-card">
         <div class="bench-head"><h3>${o.name}　RTK 測坐標</h3><span class="bench-keys">${isMobile() ? '按住水準器扶正桿子' : 'WASD：扶正桿子　Space：開始記錄　Esc：先不測'}</span></div>
         <div class="rtk-body">
-          <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
+          <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b>${isMobile() && rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>
           <div class="rtk-screen">
             <div class="rs-top"><span>GNSS RTK</span><span class="rs-net">網路 RTK　已連線</span></div>
             <div class="rs-sol">—</div>
@@ -124,6 +124,11 @@ class RtkBench {
       </div>`;
     document.body.appendChild(this.root);
     if (isMobile()) {
+      if (rodHintOn()) {
+        ui.toast('手指按在圓圈上不要放，往哪邊按，桿子就往哪邊扶——把氣泡壓回中間。', 'info', 6000);
+        const v = this.root.querySelector('.rh-vial');
+        v?.addEventListener('pointerdown', () => { rodHintDone(); this.root?.querySelectorAll('.rh-tip').forEach(e => e.remove()); }, { once: true });
+      }
       this.padDetach = attachHoldPad(this.root.querySelector('.rh-vial'), this.pad);
       this.root.querySelectorAll<HTMLButtonElement>('.rtk-mbar .sm-btn').forEach(b => {
         b.onclick = (ev) => {
@@ -183,9 +188,9 @@ class RtkBench {
     const gust = 0.5 + 0.5 * Math.sin(this.time * 0.9) * Math.sin(this.time * 2.3);
     const fx = (this.keys.r ? 1 : 0) - (this.keys.l ? 1 : 0) + this.pad.x;
     const fy = (this.keys.d ? 1 : 0) - (this.keys.u ? 1 : 0) + this.pad.y;
-    this.vx += ((Math.random() - 0.5) * 1.4 + w.x * 0.18 * gust + fx * 2.2) * dt;
-    this.vy += ((Math.random() - 0.5) * 1.4 + w.z * 0.18 * gust + fy * 2.2) * dt;
-    this.vx *= Math.pow(0.25, dt); this.vy *= Math.pow(0.25, dt);
+    this.vx += ((Math.random() - 0.5) * 0.85 + w.x * 0.11 * gust + fx * 3.2) * dt;
+    this.vy += ((Math.random() - 0.5) * 0.85 + w.z * 0.11 * gust + fy * 3.2) * dt;
+    this.vx *= Math.pow(0.15, dt); this.vy *= Math.pow(0.15, dt);
     this.bx = THREE.MathUtils.clamp(this.bx + this.vx * dt, -1, 1);
     this.by = THREE.MathUtils.clamp(this.by + this.vy * dt, -1, 1);
     const tilt = Math.hypot(this.bx, this.by); // 1 ≈ 1.5°
@@ -231,7 +236,7 @@ class RtkBench {
     if (!r) return;
     const bub = r.querySelector('.rh-bub') as HTMLElement;
     bub.style.transform = `translate(${this.bx * 50}px, ${this.by * 50}px)`;
-    bub.classList.toggle('ok', tilt < 0.28);
+    bub.classList.toggle('ok', tilt < 0.38);
     const g = r.querySelector('.rtk-banner .bg-main') as HTMLElement;
     const gtxt = this.rec ? '記錄中……桿子扶好別動！（<kbd class="cap">WASD</kbd> 保持氣泡在圈裡）'
       : this.sol === 'fix' ? '手簿是<b class="g">固定解 FIX</b> 了 → 按 <kbd class="cap cap-wide">Space</kbd> 開始記錄'
