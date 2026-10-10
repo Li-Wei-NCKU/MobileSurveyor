@@ -85,6 +85,13 @@ export class GcpJob {
   // 出發前：學弟幫忙搬東西上車
   private loading = false;
   private loaded = false;
+  /** 整備是自己搬還是交給學弟：''=還沒選 */
+  loadBy: '' | 'me' | 'asst' = '';
+  /** 玩家有沒有自己檢查過後斗 */
+  asstChecked = false;
+  private prepHinted = false;
+  get asstLoading() { return this.loading; }
+  get asstLoaded() { return this.loaded; }
   /** 這次有拿清單 (被學長嚴肅交代過) */
   private checklist = false;
   private handVis: THREE.Object3D | null = null;
@@ -147,6 +154,7 @@ export class GcpJob {
     this.closeMap();
     if (this.phone) this.togglePhone();
     this.loading = this.loaded = this.checklist = false;
+    this.loadBy = ''; this.asstChecked = false; this.prepHinted = false;
     this.setHandVis(null);
     this.showClipboard(false);
     // 第三天的學弟就是第二天那位
@@ -637,6 +645,36 @@ export class GcpJob {
     ui.toast(`${nm}：「東西都上車再出發喔。」`, 'info', 2400);
   }
 
+  /** 整備階段一開始：自己搬，還是交給學弟？ */
+  onPrep() {
+    if (this.prepHinted) return;
+    this.prepHinted = true;
+    let tries = 0;
+    const ask = () => {
+      if (this.fd.phase !== 'prep' || this.loading || this.loaded || this.loadBy) return;
+      const busy = document.querySelector('.dialog-backdrop, .modal-backdrop.show, .m-sheet.open, .qte');
+      if (busy && tries++ < 34) { setTimeout(ask, 900); return; }
+      this.askWhoLoads();
+    };
+    setTimeout(ask, 1500);
+  }
+
+  private askWhoLoads() {
+    ui.showDialog('整備儀器', `今天佈航測標要帶的東西都在器材室的貨架上。<br>自己一件一件搬上後斗，還是交給學弟${asstName()}去裝車？`, [
+      { id: 'me', text: '自己搬。東西自己點過比較放心。', reply: '（那就自己來吧。清單在外業手簿裡。）', score: 0, tag: '' },
+      { id: 'asst', text: `交給學弟${asstName()}裝車。`, reply: `（去跟學弟${asstName()}說一聲——要怎麼交代，等一下見面再說。）`, score: 0, tag: '' },
+    ], (o) => {
+      this.loadBy = o.id === 'asst' ? 'asst' : 'me';
+      this.relock();
+      if (this.loadBy === 'asst') {
+        this.fd.panel('prep', `走過去跟學弟${asstName()}說一聲，請他把今天要用的設備搬上後斗。`);
+      } else {
+        ui.toast('設備在器材室的貨架上，一件一件搬到車尾放進後斗。清單可以點左上角的任務提示看。', 'info', 5600);
+        this.fd.panel('prep', '自己整備儀器：到器材室貨架挑今天要用的設備，搬到車尾放進後斗。');
+      }
+    });
+  }
+
   // ================================================================
   // 出發前：學弟幫忙搬東西上車
   // ================================================================
@@ -645,7 +683,8 @@ export class GcpJob {
     const nm = `學弟${asstName()}`;
     a.state = 'talking';
     ui.faceSpeaker(a.g);
-    const hello = !this.sameAsst ? '「學長早！今天佈標對吧？要我幫忙把東西搬上車嗎？」'
+    const hello = this.loadBy === 'asst' ? `「學長早！今天佈標對吧？東西我來搬就好——要怎麼搬，學長你說。」${this.sameAsst && this.mentor2 >= 1 ? '<br><small>（昨天你教他的，他都寫在筆記本第一頁了）</small>' : ''}`
+      : !this.sameAsst ? '「學長早！今天佈標對吧？要我幫忙把東西搬上車嗎？」'
       : this.mentor2 >= 1 ? '「學長早！昨天你教我的，我都寫在筆記本第一頁了！今天佈標對吧？要我幫忙把東西搬上車嗎？」'
         : this.mentor2 <= -1 ? '「學長早……今天佈標對吧？要我幫忙搬東西上車嗎？（學弟看起來還是有點迷糊）」'
           : '「學長早！昨天水準辛苦了。今天佈標對吧？要我幫忙把東西搬上車嗎？」';
@@ -656,8 +695,13 @@ export class GcpJob {
     ], (o) => {
       a.state = 'yard';
       this.loadMode = o.id as 'serious' | 'help' | 'self';
+      this.loadBy = o.id === 'self' ? 'me' : 'asst';
       if (o.id === 'serious') { this.checklist = true; this.startLoad(); }
       else if (o.id === 'help') this.startLoad();
+      else {
+        ui.toast('設備在器材室的貨架上，一件一件搬到車尾放進後斗。', 'info', 4200);
+        this.fd.panel('prep', '自己整備儀器：到器材室貨架挑今天要用的設備，搬到車尾放進後斗。');
+      }
       this.relock();
     });
   }
@@ -748,7 +792,7 @@ export class GcpJob {
     ], (o) => {
       a.state = 'yard';
       this.showClipboard(false);
-      if (o.id === 'check') fd.openUnload();
+      if (o.id === 'check') { this.asstChecked = true; fd.openUnload(); }
       else this.relock();
     });
   }
@@ -1471,7 +1515,7 @@ export class GcpJob {
   }
   snapshot(): AnyObj {
     return {
-      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, nails: this.nails.left, loadMode: this.loadMode, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
+      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
       asst: { x: this.asst.g.position.x, z: this.asst.g.position.z, state: this.asst.state, visible: this.asst.g.visible },
       gcps: this.gcps.map(g => ({ name: g.name, spot: g.spot, res: g.res, img: g.canvas.toDataURL('image/png'), rtk: g.rtk || null, photos: g.photos, notes: g.notes, paw: !!g.paw, washed: !!g.washed, crushed: !!g.crushed, busRisk: !!g.busRisk, covered: !!g.covered, rtkStale: !!g.rtkStale, shifted: !!g.shifted, seenClear: !!g.seenClear, hiddenWhy: g.hiddenWhy || '' })),
       ev: this.ev.snapshot(),
@@ -1486,6 +1530,7 @@ export class GcpJob {
     if (s.wind) this.wind = s.wind;
     if (typeof s.nails === 'number') this.nails = { left: s.nails };
     this.loadMode = s.loadMode || ''; this.forgotAt = s.forgotAt || null; this.fetchBack = !!s.fetchBack;
+    this.loadBy = s.loadBy || ''; this.asstChecked = !!s.asstChecked;
     this.laid = !!s.laid;
     this.ev.restore(s.ev);
     this.uav.restore(s.uav);
