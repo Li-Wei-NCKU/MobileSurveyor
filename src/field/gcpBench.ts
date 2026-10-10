@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import type { GameApp } from './legacy';
 import { SM } from './legacy';
 import * as ui from './ui';
+import { gameIntro } from '../mobile/intro';
 import * as sfx from './sfx';
 import { isMobile } from './holdPad';
 import { tell } from './story';
@@ -177,6 +178,20 @@ class GcpBench {
 
   // ================================================================
   start(o: GcpWorkOpts) {
+    gameIntro({
+      key: 'gcpbench',
+      title: '佈航測標',
+      sub: '模板 → 噴白 → 噴黑 → 敲鋼釘',
+      lines: ['先用<b>「左轉／右轉」</b>把 1.2 m 模板轉到喜歡的方向，按<b>「放好模板」</b>。',
+        '<b>手指按住畫面拖曳</b>＝噴漆；噴罐<b>升高噴得開但淡</b>、<b>降低噴得濃但窄</b>。',
+        '露出來的兩格噴白 → 轉遮板 → 另外兩格噴黑。',
+        '最後敲鋼釘：指針走到<b>綠色那格</b>時點<b>「敲下去」</b>，偏掉釘子會歪。'],
+      short: '轉模板放好 → 按住畫面拖曳噴漆 → 指針到綠色時點「敲下去」。',
+      onStart: () => this.startNow(o),
+    });
+  }
+
+  private startNow(o: GcpWorkOpts) {
     if (this.active) this.teardown();
     this.o = o;
     this.active = true;

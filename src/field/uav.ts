@@ -15,6 +15,7 @@ import { buildPerson, animateWalk } from './npc';
 import { AREA, toWorld, toLocal, canopyAt, topAt, drawSiteMap, surfAt, CROP } from './gcpSite';
 import { runQTE, qteActive } from './qte';
 import * as ui from './ui';
+import { gameIntro } from '../mobile/intro';
 import * as sfx from './sfx';
 import { tell, whatIf } from './story';
 
@@ -410,7 +411,18 @@ export class UavOps {
         if (this.plan.length < 2) { sfx.error(); ui.toast('至少要點兩個航點。', 'warn', 2000); return; }
         window.removeEventListener('keydown', onKey, true);
         this.closePlanner();
-        this.startFlight();
+        gameIntro({
+          key: 'uavfly',
+          title: '起飛',
+          sub: `手動升到 ${ALT} m，之後自動跑航線`,
+          lines: ['<b>按住「升空」</b>一直到高度 30 m，飛機就會自己照航線飛、定距拍照。',
+            '左邊的<b>搖桿</b>可以平移飛機（起飛和降落時才需要）。',
+            '飛完它會自己飛回起降點上空，這時用<b>搖桿對準</b>、按<b>「下降」</b>降落。',
+            '電量會一直掉，電線桿旁邊指南針可能會怪怪的。'],
+          short: '按住「升空」到 30 m 會自動跑航線；回來後搖桿對準、按「下降」。',
+          start: '起飛',
+          onStart: () => this.startFlight(),
+        });
         return;
       }
       draw();

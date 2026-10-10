@@ -30,6 +30,7 @@ import { ITEMS, type ItemId } from './items';
 import { buildItemModel } from './itemModels';
 import { bark } from './sound';
 import { tell, whatIf } from './story';
+import { gameIntro } from '../mobile/intro';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
@@ -2480,6 +2481,26 @@ export class LevelJob {
   private onHoldKey: ((e: KeyboardEvent) => void) | null = null;
 
   private startHold(pt: Pt) {
+    if (this.hold) return;
+    const p0 = this.fd.app.player.position;
+    if (Math.hypot(p0.x - pt.x, p0.z - pt.z) > 3) { ui.toast('走近一點才扶得到尺。', 'info'); return; }
+    gameIntro({
+      key: 'rodhold',
+      title: `扶尺　${pt.name}`,
+      sub: `學弟${asstName()}要從儀器那邊讀這根尺`,
+      lines: ['手指<b>按在圓水準器上不要放</b>，往哪邊按，尺就往哪邊扶。',
+        '把<b>氣泡壓回中間的圈裡</b>——風會一直推，要一直修。',
+        `學弟喊<b>「要讀囉」</b>的那幾秒最重要，尺歪了讀數就會偏。`,
+        '讀完或想放手，按<b>「放手」</b>。'],
+      short: '按住圓水準器把氣泡壓在圈裡，學弟喊「要讀囉」的時候撐穩。',
+      start: '扶好了',
+      cancel: '先不扶',
+      onCancel: () => this.swapHint(),
+      onStart: () => this.startHoldNow(pt),
+    });
+  }
+
+  private startHoldNow(pt: Pt) {
     if (this.hold) return;
     const p = this.fd.app.player.position;
     if (Math.hypot(p.x - pt.x, p.z - pt.z) > 3) { ui.toast('走近一點才扶得到尺。', 'info'); return; }

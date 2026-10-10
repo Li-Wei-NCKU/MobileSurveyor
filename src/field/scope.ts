@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { GameApp, AnyObj } from './legacy';
 import { audio } from './legacy';
+import { gameIntro } from '../mobile/intro';
 
 export interface ScopeOpts {
   head: THREE.Object3D;        // 水準儀頭 (望遠鏡沿 +Z，光軸高 0.074)
@@ -49,6 +50,20 @@ class LevelScope {
   private done = false;
 
   open(app: GameApp, o: ScopeOpts) {
+    gameIntro({
+      key: 'scope',
+      title: '電子水準儀：讀數',
+      sub: o.title,
+      lines: ['<b>左右拖畫面</b>轉動望遠鏡，把<b>豎絲</b>對到標尺上。',
+        '左邊的<b>調焦滑桿</b>上下拉，把影像調清楚（糊的讀不到）。',
+        '對好、清楚了，按<b>「量測」</b>，儀器會自己讀條碼。',
+        '標尺沒扶直的話按<b>「叫學弟扶直」</b>。大車經過會震動，等它過去再讀。'],
+      short: '拖畫面對準標尺、拉滑桿調清楚，再按「量測」。',
+      onStart: () => this.openNow(app, o),
+    });
+  }
+
+  private openNow(app: GameApp, o: ScopeOpts) {
     if (this.active) this.close();
     this.app = app; this.o = o; this.active = true; this.done = false;
     this.focus = o.focus;

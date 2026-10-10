@@ -10,6 +10,7 @@ import type { GameApp } from './legacy';
 import { SM } from './legacy';
 import * as ui from './ui';
 import { attachHoldPad, isMobile, rodHintOn, rodHintDone, type PadVec } from './holdPad';
+import { gameIntro } from '../mobile/intro';
 import * as sfx from './sfx';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -62,6 +63,20 @@ class RtkBench {
   private screenT = 0;
 
   start(o: RtkOpts) {
+    gameIntro({
+      key: 'rtk',
+      title: 'RTK 測坐標',
+      sub: '對中桿立在鋼釘上，桿子要扶直',
+      lines: ['手指<b>按在圓水準器上不要放</b>，往哪邊按，桿子就往哪邊扶。',
+        '把<b>氣泡壓回中間的圈裡</b>——風會一直推，要一直修。',
+        '等手簿跳成<b>固定解 FIX</b> 才按<b>「開始記錄」</b>。',
+        '記錄 3 筆，記錄中桿子歪掉誤差就會帶進去。'],
+      short: '按住圓水準器把氣泡壓在圈裡，等固定解 FIX 再按「開始記錄」。',
+      onStart: () => this.startNow(o),
+    });
+  }
+
+  private startNow(o: RtkOpts) {
     this.o = o;
     this.active = true;
     const app = o.app, sm = app.sceneManager, p = app.player, cam = sm.camera;

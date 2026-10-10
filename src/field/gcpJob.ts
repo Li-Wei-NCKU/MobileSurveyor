@@ -13,6 +13,7 @@ import { buildPerson, animateWalk } from './npc';
 import type { Circle } from './truck';
 import type { ReportRow } from './ui';
 import * as ui from './ui';
+import { gameIntro } from '../mobile/intro';
 import * as sfx from './sfx';
 import { ITEMS, type ItemId } from './items';
 import { buildItemModel } from './itemModels';
@@ -997,6 +998,21 @@ export class GcpJob {
       (window as AnyObj).__lookMode?.(false);   // 手機版：離開第一人稱取景
       return;
     }
+    gameIntro({
+      key: 'photo',
+      title: '拍點位照片',
+      sub: '每個標要近照 1 張、遠照 2 張',
+      lines: ['<b>拖畫面</b>轉頭取景，右邊的<b>＋／−</b>或<b>兩指</b>可以變焦。',
+        '<b>近照</b>：站在標旁邊，把標放在畫面<b>正中間</b>。',
+        '<b>遠照</b>：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等<b>參考地物</b>。',
+        '取好景按<b>「拍照」</b>，拍完按<b>「收起手機」</b>。'],
+      short: '拖畫面取景、兩指或 ＋／− 變焦，近照把標放中間、遠照要帶到地物。',
+      start: '開始拍',
+      onStart: () => this.phoneOpen(cam),
+    });
+  }
+
+  private phoneOpen(cam: THREE.Object3D) {
     ui.forceFieldbook(true);
     this.phoneHid = cam.children.filter(c => c.visible); this.phoneHid.forEach(c => { c.visible = false; });
     const d = document.createElement('div');

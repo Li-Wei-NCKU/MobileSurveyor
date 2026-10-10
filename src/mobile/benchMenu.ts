@@ -11,6 +11,7 @@ import { audio } from '../field/legacy';
 import * as ui from '../field/ui';
 import { bench } from '../field/bench';
 import { commandMenu, type CommandMenu, type MenuBtn } from './sheet';
+import { gameIntro } from './intro';
 import { tell, whatIf } from '../field/story';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -76,6 +77,26 @@ class BenchMenu {
   // 1. 基座定心定平
   // ================================================================
   tribrach(g: AnyObj, opts: TribrachOpts = {}) {
+    const lvOnly = !!opts.noPlummet;
+    gameIntro({
+      key: lvOnly ? 'level' : 'tribrach',
+      title: lvOnly ? '整平水準儀' : '基座定心定平',
+      sub: lvOnly ? '把氣泡趕進黑圈，儀器才是水平的' : '先讓儀器對準標石中心，再把它整平',
+      lines: lvOnly
+        ? ['畫面上是三顆<b>腳螺旋</b>和一個<b>圓水準器</b>。',
+          '用手指<b>繞著腳螺旋轉圈</b>，就能把它旋進旋出。',
+          '一次轉一顆，把氣泡慢慢趕進<b>中間的黑圈</b>。',
+          '氣泡進圈後按<b>「鎖定」</b>完成。']
+        : ['畫面上是三顆<b>腳螺旋</b>、一個<b>圓水準器</b>，和一個<b>光學對點器</b>。',
+          '對點器裡的<b>黑點</b>要進<b>紅圈</b>：直接用手指把畫面<b>拖</b>過去（等於平移基座）。',
+          '氣泡要進黑圈：用手指<b>繞著腳螺旋轉圈</b>，一次轉一顆。',
+          '兩個都好了再按<b>「鎖定」</b>。對心和整平會互相影響，要來回調幾次。'],
+      short: lvOnly ? '轉腳螺旋（手指繞圈）把氣泡趕進黑圈，再按「鎖定」。' : '拖畫面對心、轉腳螺旋整平，兩個都好再按「鎖定」。',
+      onStart: () => this.tribrachGo(g, opts),
+    });
+  }
+
+  private tribrachGo(g: AnyObj, opts: TribrachOpts = {}) {
     this.exit();
     g.recalculateTribrachPhysics?.();
     const np = !!opts.noPlummet;
@@ -295,6 +316,20 @@ class BenchMenu {
   // 2. 量天線斜高
   // ================================================================
   tape(g: AnyObj) {
+    gameIntro({
+      key: 'tape',
+      title: '量天線斜高',
+      sub: '鋼捲尺從標石頂拉到儀器的量高缺口',
+      lines: ['用手指<b>拖畫面</b>，把鋼捲尺的一端對到<b>標石頂</b>。',
+        '另一端對到儀器側面的<b>量高缺口</b>。',
+        '<b>兩指可以放大</b>，刻度看清楚一點再讀。',
+        '讀好之後按<b>「記錄」</b>。'],
+      short: '拖畫面對準標石頂和量高缺口，兩指放大看刻度，再按「記錄」。',
+      onStart: () => this.tapeGo(g),
+    });
+  }
+
+  private tapeGo(g: AnyObj) {
     this.exit();
     const t = g.tripodMesh as THREE.Object3D | null;
     const sm = this.app.sceneManager as AnyObj;
@@ -407,6 +442,19 @@ class BenchMenu {
   // 3. 手簿靜態觀測
   // ================================================================
   controller(g: AnyObj) {
+    gameIntro({
+      key: 'controller',
+      title: '手簿：開始靜態觀測',
+      sub: '點名、天線高輸入好就可以開始記錄',
+      lines: ['檢查<b>點名</b>和<b>天線高</b>有沒有填對。',
+        '按<b>「開始記錄」</b>，接收儀就開始記歷元。',
+        '記錄中<b>不要碰腳架</b>，碰到就要重來。'],
+      short: '確認點名和天線高，按「開始記錄」，記錄中別碰腳架。',
+      onStart: () => this.controllerGo(g),
+    });
+  }
+
+  private controllerGo(g: AnyObj) {
     this.exit();
     const t = g.tripodMesh as THREE.Object3D | null;
     if (t?.userData.accessories) t.userData.accessories.visible = true;

@@ -529,3 +529,26 @@ kbd.cap.menu-cap, kbd.cap.cap-brand { display: inline-flex !important; }
   font: 700 12px var(--font-ui); color: rgba(255,255,255,.72); text-shadow: 0 1px 3px rgba(0,0,0,.6);
 }
 .menu-sub { margin: 14px 0 20px; font-size: 17px; }
+
+/* ---------- 小遊戲開始前的說明卡 ---------- */
+.m-intro { display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 70; }
+.m-intro-box {
+  width: min(460px, 100%); max-height: calc(100vh - 40px); overflow: auto;
+  padding: 16px 16px 14px; border-radius: 18px; background: #f6f4ea; color: var(--ink);
+  border: 3px solid #0d0f12; box-shadow: 0 18px 44px rgba(0,0,0,.5);
+}
+.m-intro-head h3 { margin: 0; font: 900 20px var(--font-ui); }
+.m-intro-head small { display: block; margin-top: 2px; font: 600 13px var(--font-ui); color: #5b6472; }
+.m-intro-body { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0 2px; }
+.m-intro-art { flex: none; width: 112px; }
+.m-intro-art svg { width: 100%; height: auto; display: block; }
+.m-intro-steps { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 7px; font: 600 15px/1.5 var(--font-ui); }
+.m-intro-steps li::marker { color: #a07400; font-weight: 900; }
+.m-intro-steps b { color: #8a6100; }
+.m-intro-one { margin: 0; font: 600 15px/1.55 var(--font-ui); }
+.m-intro-btns { display: flex; gap: 8px; margin-top: 14px; }
+.m-intro-btns button {
+  flex: 1; min-height: 52px; border-radius: 13px; border: 2px solid #a07400;
+  background: var(--survey-yellow); color: #3b2a00; font: 900 17px var(--font-ui);
+}
+.m-intro-btns .m-intro-no { flex: 0 0 34%; border-color: rgba(31,45,61,.3); background: #fff; color: var(--ink); font-weight: 700; }

@@ -1,7 +1,7 @@
 /**
  * 手機版的後斗畫面：
  *  - 格子畫大、每件設備直接畫插畫＋名字，疊在上層的會偏移＋有「2F」標籤，一眼看得出誰壓誰
- *  - 放入：點格子看預覽 (綠色可以／紅色不行，並說明原因)，再按「放這裡」
+ *  - 放入：點格子就直接放上去；放不下才顯示紅色預覽並說明原因 (手機版越少步驟越好)
  *  - 取出：可以拿的亮綠框，拿不了的灰掉；點它會把「壓住／擋住它的那幾件」閃紅框，直接看到卡在哪
  */
 import type { AnyObj } from '../field/legacy';
@@ -138,7 +138,7 @@ function open(o: Opts) {
       else say(`疊在 <b>${res.on.map(p => shortName(p.item)).join('、')}</b> 上面（第 2 層）。`, 'ok');
     } else {
       prev.style.display = 'none';
-      say(`點一個格子，看<b>${shortName(item)}</b>會放在哪裡。`);
+      say(`點一個格子，<b>${shortName(item)}</b>就直接放上去；放不下會告訴你為什麼。`);
     }
     const btn = (t: string, cls: string, on: () => void) => {
       const b = document.createElement('button');
@@ -150,24 +150,15 @@ function open(o: Opts) {
     };
     const { w: fw, d: fd2 } = footprint(item, true);
     if (fw !== w || fd2 !== d) btn(rot ? '轉回來' : '旋轉 90°', 'ghost', () => { rot = !rot; render(); });
-    btn('放這裡', can ? 'primary' : 'off', () => {
-      if (!can || !hover) { sfx.error(); return; }
-      const a = anchor(hover.col, hover.row);
-      const res = grid.drop(item, a.col, a.row, rot);
-      if (res.reason) { sfx.error(); return; }
-      bd.remove();
-      o.onPlace?.(a.col, a.row, res.layer, rot);
-    });
+    void can;
   };
 
   const tapCell = (c: number, r: number) => {
-    // 同一格再點一次 = 直接放下
-    if (hover && hover.col === c && hover.row === r) {
-      const a = anchor(c, r);
-      const res = grid.drop(item, a.col, a.row, rot);
-      if (!res.reason) { bd.remove(); o.onPlace?.(a.col, a.row, res.layer, rot); return; }
-      sfx.error();
-    }
+    // 點一下就直接放上去；放不下才顯示預覽和原因
+    const a = anchor(c, r);
+    const res = grid.drop(item, a.col, a.row, rot);
+    if (!res.reason) { bd.remove(); o.onPlace?.(a.col, a.row, res.layer, rot); return; }
+    sfx.error();
     hover = { col: c, row: r };
     paint();
   };
