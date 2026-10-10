@@ -155,7 +155,7 @@ export class MobileHud {
     const sub = (fd as AnyObj).sub;
     if (sub) {
       // 第二、三天的額外動作：由各自的工作提供 (之後的里程碑)
-      const extra: Act[] = (sub.mobileActs?.() || []).map((a: AnyObj) => ({ id: a.id, text: a.text, on: () => this.key(a.code) }));
+      const extra: Act[] = (sub.mobileActs?.() || []).map((a: AnyObj) => ({ id: a.id, text: a.text, minor: !!a.minor, on: () => this.key(a.code) }));
       out.push(...extra);
     }
     const rp = (fd as AnyObj).events?.rescuePoint?.();

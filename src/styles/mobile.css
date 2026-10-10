@@ -41,8 +41,8 @@ body { touch-action: manipulation; }
 .m-act .cap { transform: scale(.85); }
 .m-act.accent { background: var(--survey-yellow); color: #111; border-color: #a07400; animation: m-pulse 1s ease-in-out infinite alternate; }
 @keyframes m-pulse { from { box-shadow: 0 4px 12px rgba(0,0,0,.35); } to { box-shadow: 0 0 0 6px rgba(233,179,8,.35); } }
-.m-bar-side { position: absolute; right: 10px; bottom: calc(var(--sab) + var(--m-bar-h) + 66px); display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
-.m-act.minor { min-height: 44px; padding: 7px 14px; font: 700 14px var(--font-ui); }
+.m-bar-side { position: absolute; right: 10px; bottom: calc(var(--sab) + var(--m-bar-h) + 118px); display: flex; flex-direction: column; gap: 10px; align-items: flex-end; pointer-events: none; }
+.m-act.minor { min-height: 52px; padding: 9px 20px; font: 800 16px var(--font-ui); }
 .m-walkchip { position: fixed; left: 12px; right: 12px; margin: 0 auto; width: fit-content; bottom: calc(var(--sab) + var(--m-bar-h) + 14px); z-index: 41; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.92); color: #1f2d3d; font: 700 14px var(--font-ui); box-shadow: 0 4px 12px rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .m-walkchip.show { opacity: 1; }
 .m-walkchip::before { content: '➜ '; color: #d97706; }
@@ -338,6 +338,24 @@ body.scope-active .scope-focus .sf-bar i { left: -7px; width: 48px; height: 7px;
 
 /* ---------- 扶尺／扶桿觸控 ---------- */
 .rh-vial.pad { touch-action: none; cursor: grab; }
+/* 扶尺／扶桿：氣泡顯示放大，推桿另外做一塊大的，手指才不會蓋住氣泡 */
+.rodhold .rh-vial, .rtk-card .rh-vial { width: 168px; height: 168px; }
+.rodhold .rh-ring, .rtk-card .rh-ring { width: 50px; height: 50px; margin: -25px 0 0 -25px; border-width: 3px; }
+.rodhold .rh-bub, .rtk-card .rh-bub { width: 30px; height: 30px; margin: -15px 0 0 -15px; }
+.rh-pad {
+  position: relative; touch-action: none; user-select: none; margin-top: 10px;
+  width: 100%; min-width: min(260px, 72vw); min-height: 150px; border-radius: 16px; border: 2px dashed rgba(31,45,61,.35);
+  background: repeating-linear-gradient(45deg, rgba(31,45,61,.05) 0 10px, transparent 10px 20px);
+  display: flex; align-items: center; justify-content: center;
+}
+.rh-pad span { font: 700 14px var(--font-ui); color: #5b6472; text-align: center; padding: 0 12px; }
+.rh-pad .rh-pad-x {
+  position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px;
+  border-radius: 50%; border: 2px solid rgba(31,45,61,.3);
+}
+.rh-pad.push { border-color: #a07400; background: rgba(250,204,21,.18); }
+.rh-pad.push span { color: #8a6100; }
+.rh-pad .rh-tip { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; pointer-events: none; }
 .rh-vial.pad::after { content: '按住推'; position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%); font: 600 11px var(--font-ui); color: rgba(255,255,255,.65); white-space: nowrap; }
 .rh-vial.pad.push { box-shadow: 0 0 0 3px rgba(242,183,5,.55); }
 .rh-let { margin-top: 22px; min-height: 46px; padding: 8px 22px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.4); background: rgba(20,29,38,.9); color: #fff; font: 800 15px var(--font-ui); }
@@ -552,3 +570,7 @@ kbd.cap.menu-cap, kbd.cap.cap-brand { display: inline-flex !important; }
   background: var(--survey-yellow); color: #3b2a00; font: 900 17px var(--font-ui);
 }
 .m-intro-btns .m-intro-no { flex: 0 0 34%; border-color: rgba(31,45,61,.3); background: #fff; color: var(--ink); font-weight: 700; }
+
+/* 手簿攤在畫面下方時，「放下」之類的側邊鍵再往上讓一點 */
+body:has(#level-book .level-book) .m-bar-side,
+body:has(.level-book) .m-bar-side { bottom: calc(var(--sab) + var(--m-bar-h) + 230px); }

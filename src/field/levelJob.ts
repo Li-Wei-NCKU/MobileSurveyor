@@ -1121,7 +1121,9 @@ export class LevelJob {
     else if (this.instState === 'mounted') h = '對著儀器按 E 整平。';
     else if (!this.haveStaff) h = `儀器好了。把標尺和鐵墊交給學弟${asstName()}（對著他按 E），他去 BM-1035 立尺才能讀後視。`;
     else if (st.back.read === undefined) h = `對著儀器按 E，看望遠鏡讀後視 ${st.back.pt.name}。${st.back.pt === this.bm1 ? `（讀之前先看一下學弟${asstName()}的尺有沒有立對位置）` : ''}`;
-    else if (!st.fore) h = `看著地上的綠色圈圈（轉點 TP1）按 E，叫學弟${asstName()}去立尺。前後視距要差不多長。`;
+    else if (!st.fore) h = this.tpAuto()
+      ? `後視讀好了。按下面的<b>「叫學弟${asstName()}到綠圈立尺」</b>，或自己看著地上別的位置按 E 指定轉點（前後視距要差不多長）。`
+      : `後視讀好了。看著地上選一個轉點按 E，叫學弟${asstName()}去立尺。前後視距要差不多長。`;
     else if (st.fore.read === undefined) h = `等學弟${asstName()}立好尺，對著儀器按 E 讀前視 ${st.fore.pt.name}。`;
     else h = `這站完成！學弟${asstName()}要接手操作儀器。`;
     this.fd.panel('observe', h);
@@ -1477,23 +1479,58 @@ export class LevelJob {
     const st = this.cur;
     if (!st) return null;
     if (st.back.read === undefined) return { ...at, label: `回儀器旁讀後視（${st.back.pt.name}）` };
-    if (!st.fore) return null;                        // 要自己選前視點
+    if (!st.fore) {
+      const q = this.tpAuto();
+      if (q) return { x: q.x, z: q.z, label: `叫學弟${asstName()}到綠圈立尺（前視點）`, reach: 2.4 };
+      return null;                                    // 綠圈不能用就自己挑一個
+    }
     if (st.fore.read === undefined) return { ...at, label: `回儀器旁讀前視（${st.fore.pt.name}）` };
     return { ...at, label: '這站完成，換學弟操作' };
   }
 
   /** 手機版動作列：鍵盤才有的操作改成按鈕 */
-  mobileActs(): { id: string; text: string; code: string }[] {
-    const out: { id: string; text: string; code: string }[] = [];
+  mobileActs(): { id: string; text: string; code: string; minor?: boolean }[] {
+    const out: { id: string; text: string; code: string; minor?: boolean }[] = [];
     if (this.carrySet && this.fd.carrying === 'tripod') out.push({ id: 'lv-set', text: '放下整組儀器', code: 'KeyG' });
+    // 後視讀完、還沒放前視：直接給一顆「叫學弟去綠圈立尺」，不用自己瞄地面
+    const q = this.tpAuto();
+    if (q) out.push({ id: 'lv-tp', text: `叫學弟${asstName()}到綠圈立尺（前視點）`, code: 'KeyT' });
     if (this.canRelocate()) {
       const p = this.fd.app.player.position;
-      if (this.inst && Math.hypot(p.x - this.inst.position.x, p.z - this.inst.position.z) < 3) out.push({ id: 'lv-re', text: '重新架站', code: 'KeyR' });
+      if (this.inst && Math.hypot(p.x - this.inst.position.x, p.z - this.inst.position.z) < 3) out.push({ id: 'lv-re', text: '重新架站', code: 'KeyR', minor: true });
     }
     return out;
   }
 
+  /** 後視讀完、前視還沒放：建議的轉點 (綠圈)。可以直接叫學弟過去 */
+  private tpAuto(): { x: number; z: number } | null {
+    if (this.swapped) return null;
+    const st = this.cur;
+    if (!st || !this.inst || this.instState !== 'leveled') return null;
+    if (st.back.read === undefined || st.fore) return null;
+    if (this.fd.carrying) return null;
+    const s1 = this.tpSuggest();
+    if (!s1) return null;
+    const df = Math.hypot(s1.x - this.inst.position.x, s1.z - this.inst.position.z);
+    if (df < 4 || this.tpBad(s1.x, s1.z, df) || this.spotBlocked(s1.x, s1.z, 0.25)) return null;
+    return s1;
+  }
+
+  /** 叫學弟到建議的轉點立尺 */
+  private sendRodAuto(): boolean {
+    const q = this.tpAuto();
+    const st = this.cur;
+    if (!q || !st || !this.inst) return false;
+    const df = Math.hypot(q.x - this.inst.position.x, q.z - this.inst.position.z);
+    const pt: Pt = { name: `TP${this.tps.length + 1}`, x: q.x, z: q.z, kind: 'tp', plate: null, sink: 0, top: 0 };
+    this.tps.push(pt);
+    st.fore = { pt, dist: df };
+    this.sendRod(pt);
+    return true;
+  }
+
   onKey(e: KeyboardEvent): boolean {
+    if (e.code === 'KeyT' && !this.fd.app.player.isModalOpen()) { if (this.sendRodAuto()) return true; }
     if (e.code === 'KeyR' && this.canRelocate() && !this.fd.app.player.isModalOpen()) {
       const p = this.fd.app.player.position;
       if (Math.hypot(p.x - this.inst!.position.x, p.z - this.inst!.position.z) < 3) { this.relocate(this.instState === 'leveled' && !!this.blocker && this.blockingLine(this.cur!.back.pt)); return true; }
@@ -1923,7 +1960,10 @@ export class LevelJob {
   /** 擺在車後時一定會排到的「正確位置」：車尾後方的路肩 */
   private coneSpot(): { x: number; z: number } {
     const t = this.fd.truck.toWorld(-6.5, 0, 0);
-    return { x: t.x, z: t.z };
+    // 車停在路肩附近就把錐線吸到路肩中線上，排起來才是直的
+    const near = Math.abs(this.fd.truck.pos.z - ROAD_Z) < 14;
+    const z = near ? THREE.MathUtils.clamp(t.z, ROAD_Z + 2.4, ROAD_Z + 4.4) : t.z;
+    return { x: t.x, z };
   }
 
   /** 從擺的位置往來車方向 (西) 排一排 */
@@ -1932,11 +1972,10 @@ export class LevelJob {
     const S = SM();
     const g = new THREE.Group();
     const n = borrowed ? 2 : 4;
-    const bk = this.fd.truck.forward().multiplyScalar(-1);
-    if (!isFinite(bk.x) || (!bk.x && !bk.z)) bk.set(-1, 0, 0);
+    // 沿著路肩 (縣道是東西向) 往來車方向排一排；車子停歪了也不會跟著歪
     for (let i = 0; i < n; i++) {
       const c = S.buildCone();
-      const cx = x + bk.x * i * 2.6, cz = z + bk.z * i * 2.6;
+      const cx = x - i * 2.6, cz = z;
       c.position.set(cx, this.sm.heightAt(cx, cz), cz);
       g.add(c);
       // 一個一個擺下去
@@ -1967,12 +2006,14 @@ export class LevelJob {
 
   /** 收工清點時還留在現場、但不是「地上物件」的東西 */
   leftBehind(): string[] {
-    return this.coneObj && !this.cones?.borrowed ? [ITEMS.cones.name] : [];
+    return this.coneToCollect() ? [ITEMS.cones.name] : [];
   }
-  /** 收工指引：還沒收的交通錐 */
+  /** 收工指引：還沒收的交通錐 (只認今天現場的，免得指到別的地方) */
   coneToCollect(): { x: number; z: number; obj: THREE.Object3D } | null {
-    if (!this.coneObj || this.cones?.borrowed) return null;
-    return { x: this.cones!.x, z: this.cones!.z, obj: this.coneObj };
+    if (!this.coneObj || !this.cones || this.cones.borrowed) return null;
+    const S = this.fd.J.site;
+    if (Math.hypot(this.cones.x - S.x, this.cones.z - S.z) > S.r) return null;
+    return { x: this.cones.x, z: this.cones.z, obj: this.coneObj };
   }
 
   private removeCones() {
@@ -2328,7 +2369,7 @@ export class LevelJob {
     this.plPlates = this.havePlate;
     this.havePlate = false;
     this.ensureInteractive(this.staff, true);
-    if (this.plPlates) ui.toast(`學弟${asstName()}把兩個鐵墊交給你。轉點立尺時會自動墊上。`, 'info', 3500);
+    if (this.plPlates) ui.toast(`學弟${asstName()}把鐵墊交給你。轉點立尺時會自動墊上。`, 'info', 3500);
     else ui.toast(`（鐵墊不在學弟${asstName()}身上，轉點只能直接立在土上……）`, 'warn', 3500);
     const a = this.asst;
     a.state = 'idle';
@@ -2508,10 +2549,11 @@ export class LevelJob {
     el.className = 'rodhold enter';
     el.innerHTML = `
       <div class="rh-title">扶尺　${pt.name}</div>
-      <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b>${isMobile() && rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>
+      <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
+      ${isMobile() ? `<div class="rh-pad"><i class="rh-pad-x"></i><span>按住這裡，往要扶的方向推</span>${rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>` : ''}
       <div class="rh-prog"><i></i></div>
       <div class="rh-msg"></div>
-      <div class="rh-keys">${isMobile() ? '手指按在水準器上，往哪邊按就往哪邊扶' : '<kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手'}</div>
+      <div class="rh-keys">${isMobile() ? '' : '<kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手'}</div>
       ${isMobile() ? '<button type="button" class="rh-let">放手</button>' : ''}`;
     document.body.appendChild(el);
     document.body.classList.add('bench-active', 'rod-holding');
@@ -2529,11 +2571,10 @@ export class LevelJob {
     if (isMobile()) {
       this.holdPad.x = 0; this.holdPad.y = 0;
       if (rodHintOn()) {
-        ui.toast('手指按在圓圈上不要放，往哪邊按，尺就往哪邊扶——把氣泡壓回中間就好。', 'info', 6000);
         const drop = () => { rodHintDone(); el.querySelectorAll('.rh-tip').forEach(e => e.remove()); };
-        el.querySelector('.rh-vial')?.addEventListener('pointerdown', drop, { once: true });
+        el.querySelector('.rh-pad')?.addEventListener('pointerdown', drop, { once: true });
       }
-      this.holdDetach = attachHoldPad(el.querySelector('.rh-vial'), this.holdPad);
+      this.holdDetach = attachHoldPad(el.querySelector('.rh-pad'), this.holdPad);
       const letGo = el.querySelector('.rh-let') as HTMLButtonElement | null;
       if (letGo) letGo.onclick = (ev) => { ev.stopPropagation(); this.endHold(); this.swapHint(); };
     }
@@ -2586,7 +2627,9 @@ export class LevelJob {
     h.el.classList.toggle('ready', prep);
     this.trackAsst(dt);
     const bub = h.el.querySelector('.rh-bub') as HTMLElement;
-    bub.style.transform = `translate(${h.bx * 46}px, ${h.by * 46}px)`;
+    const vw = (h.el.querySelector('.rh-vial') as HTMLElement)?.clientWidth || 120;
+    const R = vw * 0.38;
+    bub.style.transform = `translate(${h.bx * R}px, ${h.by * R}px)`;
     bub.classList.toggle('ok', Math.hypot(h.bx, h.by) < 0.38);
     const prog = h.el.querySelector('.rh-prog i') as HTMLElement;
     prog.style.width = reading ? `${Math.round((1 - Math.max(0, this.aT) / 2.6) * 100)}%` : '0%';

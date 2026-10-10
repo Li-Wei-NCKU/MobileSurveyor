@@ -21,7 +21,7 @@ import { Navigator } from './nav';
 import { SiteEvents } from './siteEvents';
 import { ambient, menuMusic, gameMusic } from './sound';
 import { CarRadio } from './radio';
-import { JOBS, saveProgress, loadProgress, type JobId, type JobDef } from './jobs';
+import { JOBS, saveProgress, loadProgress, asstName, type JobId, type JobDef } from './jobs';
 import { resetStory, getStory, storySnapshot, storyRestore } from './story';
 import { showEnding } from './ending';
 import { LevelJob } from './levelJob';
@@ -683,8 +683,17 @@ export class FieldDay {
   // ================================================================
   // 駕駛
   // ================================================================
+  /** 學弟還在搬東西上車：不能把車開走 (回傳擋住的原因) */
+  loadingBlock(): string | null {
+    const sub = this.sub as AnyObj | null;
+    if (!sub?.asstLoading) return null;
+    return `學弟${asstName()}還在搬東西上車，等他搬完再出發。`;
+  }
+
   private enterTruck() {
     if (this.carrying) { ui.toast(`手上拿著${ITEMS[this.carrying].name}，先放上後斗或放下。`, 'warn'); sfx.error(); return; }
+    const busy = this.loadingBlock();
+    if (busy) { ui.toast(busy, 'warn', 3200); sfx.error(); return; }
     const p = this.app.player;
     this.inTruck = true;
     p.hoveredObject = null;

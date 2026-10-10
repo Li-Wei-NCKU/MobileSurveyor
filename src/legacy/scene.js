@@ -571,11 +571,6 @@ class SurveyScene {
         ];
         cases.forEach(([g, x, z, ry]) => { g.position.set(x, 0, z); g.rotation.y = ry; this.scene.add(g); this.siteProps.push(g); });
 
-        // 交通錐
-        [[-12.6, 4.2], [-12.4, 11.8], [-6.0, 11.6], [-4.5, 9.0]].forEach(([x, z]) => {
-            const c = SM.buildCone(); c.position.set(x, 0, z); this.scene.add(c);
-        });
-
         // 點位旁的標示木樁 (pink flagging)
         [[1.6, -1.4, 0.3], [11.4, -9.2, 1.1], [23.2, -27.0, 2.0], [-8.6, -13.4, 0.7]].forEach(([x, z, ry]) => {
             const s = SM.buildFlagStake(); s.position.set(x, 0, z); s.rotation.y = ry; this.scene.add(s);

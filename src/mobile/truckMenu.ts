@@ -16,7 +16,8 @@ export function installTruckMenu(app: GameApp, field: FieldDay) {
     const carrying = field.carrying;
     const n = fd.grid?.placed?.length ?? 0;
     const btns: MenuBtn[] = [];
-    const drive: MenuBtn = { id: 'drive', text: '上車駕駛', disabled: carrying ? '手上拿著東西' : undefined };
+    const busy = fd.loadingBlock?.() as string | null;
+    const drive: MenuBtn = { id: 'drive', text: '上車駕駛', disabled: carrying ? '手上拿著東西' : busy ? '學弟還在搬東西上車' : undefined };
     const bed: MenuBtn = { id: 'bed', text: '看後車廂', sub: n ? `${n} 件設備` : '空的' };
     if (carrying) {
       btns.push({ id: 'load', text: `把${ITEMS[carrying].name}放上後斗`, kind: 'primary' });

@@ -119,7 +119,7 @@ class RtkBench {
       <div class="bench-card paper rtk-card">
         <div class="bench-head"><h3>${o.name}　RTK 測坐標</h3><span class="bench-keys">${isMobile() ? '按住水準器扶正桿子' : 'WASD：扶正桿子　Space：開始記錄　Esc：先不測'}</span></div>
         <div class="rtk-body">
-          <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b>${isMobile() && rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>
+          <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
           <div class="rtk-screen">
             <div class="rs-top"><span>GNSS RTK</span><span class="rs-net">網路 RTK　已連線</span></div>
             <div class="rs-sol">—</div>
@@ -132,6 +132,7 @@ class RtkBench {
             <div class="rs-rec"><span class="rs-rec-t">記錄 0 / 3</span><i><em></em></i></div>
           </div>
         </div>
+        ${isMobile() ? `<div class="rh-pad"><i class="rh-pad-x"></i><span>按住這裡，往要扶的方向推</span>${rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>` : ''}
         ${isMobile() ? `<div class="scope-mbar rtk-mbar">
           <button type="button" class="sm-btn primary" data-a="rec">開始記錄</button>
           <button type="button" class="sm-btn ghost" data-a="quit">先不測</button>
@@ -140,11 +141,10 @@ class RtkBench {
     document.body.appendChild(this.root);
     if (isMobile()) {
       if (rodHintOn()) {
-        ui.toast('手指按在圓圈上不要放，往哪邊按，桿子就往哪邊扶——把氣泡壓回中間。', 'info', 6000);
-        const v = this.root.querySelector('.rh-vial');
+        const v = this.root.querySelector('.rh-pad');
         v?.addEventListener('pointerdown', () => { rodHintDone(); this.root?.querySelectorAll('.rh-tip').forEach(e => e.remove()); }, { once: true });
       }
-      this.padDetach = attachHoldPad(this.root.querySelector('.rh-vial'), this.pad);
+      this.padDetach = attachHoldPad(this.root.querySelector('.rh-pad'), this.pad);
       this.root.querySelectorAll<HTMLButtonElement>('.rtk-mbar .sm-btn').forEach(b => {
         b.onclick = (ev) => {
           ev.stopPropagation();
@@ -250,7 +250,8 @@ class RtkBench {
     const r = this.root;
     if (!r) return;
     const bub = r.querySelector('.rh-bub') as HTMLElement;
-    bub.style.transform = `translate(${this.bx * 50}px, ${this.by * 50}px)`;
+    const vw2 = (r.querySelector('.rh-vial') as HTMLElement)?.clientWidth || 120;
+    bub.style.transform = `translate(${this.bx * vw2 * 0.38}px, ${this.by * vw2 * 0.38}px)`;
     bub.classList.toggle('ok', tilt < 0.38);
     const g = r.querySelector('.rtk-banner .bg-main') as HTMLElement;
     const gtxt = this.rec ? '記錄中……桿子扶好別動！（<kbd class="cap">WASD</kbd> 保持氣泡在圈裡）'
