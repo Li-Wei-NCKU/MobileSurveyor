@@ -197,24 +197,10 @@ export class GcpEvents {
 
   has(id: PoolId) { return this.pool.has(id); }
 
-  /** 從事件池抽 3～4 個 (上次得罪過的人一定會再出現) */
+  /** 第三天的事件不抽了：全部都會遇到 (順序和時機還是隨機) */
   drawPool() {
-    const forced: PoolId[] = [];
-    if (this.prev.farmer === 'bad') forced.push('farmer');
-    if (this.prev.keeper === 'bad') forced.push('temple');
-    if (this.prev.village === 'bad') forced.push('rumor');
     const ov = (window as unknown as { __gcpPool?: PoolId[] }).__gcpPool; // 測試用
-    if (ov) { this.pool = new Set(ov); return; }
-    const n = Math.max(forced.length, 3 + (Math.random() < 0.5 ? 1 : 0));
-    const rest = POOL_ALL.filter(x => !forced.includes(x)).sort(() => Math.random() - 0.5);
-    this.pool = new Set([...forced, ...rest.slice(0, n - forced.length)]);
-    // 阿伯會順口提醒今天要注意的事：抽到阿伯 (或他一來就會打招呼) 時，確保他提醒的事今天真的會發生
-    const tips: PoolId[] = ['tractor', 'rumor', 'parking'];
-    if ((this.pool.has('farmer') || this.prev.farmer === 'good') && !tips.some(t => this.pool.has(t))) {
-      const removable = [...this.pool].filter(x => !forced.includes(x) && x !== 'farmer');
-      if (removable.length) this.pool.delete(removable[Math.floor(Math.random() * removable.length)]);
-      this.pool.add(tips[Math.floor(Math.random() * tips.length)]);
-    }
+    this.pool = new Set(ov || POOL_ALL);
   }
   poolText() { return [...this.pool].map(p => POOL_NAME[p]).join('、'); }
 

@@ -491,6 +491,14 @@ const MAP_COL: Partial<Record<Surf, string>> = {
   house: '#6d8fb0', temple: '#c0392b',
 };
 
+/** 外業地圖上的畫布座標 → 現場本地座標 (drawSiteMap 的反函式) */
+export function mapToLocal(W: number, Hh: number, cx: number, cy: number): { lx: number; lz: number } {
+  const X0 = -46, X1 = 46, Z0 = 41, Z1 = 124;
+  const sc = Math.min(W / (X1 - X0), Hh / (Z1 - Z0));
+  const ox = (W - (X1 - X0) * sc) / 2, oy = (Hh - (Z1 - Z0) * sc) / 2;
+  return { lx: X1 - (cx - ox) / sc, lz: Z1 - (cy - oy) / sc };
+}
+
 export function drawSiteMap(c: CanvasRenderingContext2D, W: number, Hh: number, o: {
   player?: { x: number; z: number; yaw: number }; truck?: { x: number; z: number; heading: number };
   gcps?: { x: number; z: number; name: string }[]; asst?: { x: number; z: number } | null;

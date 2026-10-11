@@ -24,7 +24,7 @@ import { UavOps, NEED_FWD, NEED_SIDE, ALT } from './uav';
 import { gcpBench, buildGcpMarker, type GcpWorkResult, type PaintStock } from './gcpBench';
 import {
   buildGcpSite, type SiteBuild, surfAt, topAt, inArea, canopyAt, buildingDist, drawSiteMap,
-  AREA, AREA_C, HARD, CROP, SURF_NAME, CROWNS, BAMBOO, toLocal, toWorld, refPoints, type Surf,
+  AREA, AREA_C, HARD, CROP, SURF_NAME, CROWNS, BAMBOO, toLocal, toWorld, mapToLocal, refPoints, type Surf,
 } from './gcpSite';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -82,6 +82,11 @@ export class GcpJob {
   private nextNo = 1;
   private hintedTablet = false;
   private askedWhere = false;
+  /** 第一個點做完之後：剩下的交給學弟，玩家只在外業地圖上指位置 */
+  asstLays = false;
+  private asstOffered = false;
+  /** 學弟目前要去佈的點 */
+  private asstJob: { x: number; z: number; name: string; t: number; walking: boolean } | null = null;
   private bodiesCache: { x: number; z: number; r: number }[] = [];
   // 出發前：學弟幫忙搬東西上車
   private loading = false;
@@ -152,6 +157,7 @@ export class GcpJob {
     this.time = 0;
     this.hintedTablet = false;
     this.askedWhere = false;
+    this.asstLays = false; this.asstOffered = false; this.asstJob = null;
     this.closeMap();
     if (this.phone) this.togglePhone();
     this.loading = this.loaded = this.checklist = false;
@@ -224,10 +230,13 @@ export class GcpJob {
     }
     const n = this.gcps.length;
     const miss = KIT.filter(it => !this.kit.has(it));
-    const txt = n === 0
+    const done = this.gcps.map(g => `${g.name}${g.rtk ? '·RTK' : ''}${g.photos.close ? '·近' : ''}${g.photos.wide.length ? `·遠${g.photos.wide.length}` : ''}`).join('　');
+    const txt = this.asstLays
+      ? `${done}\n剩下的點交給學弟${asstName()}了。點「外業地圖」，在地圖上點一下就指定下一個點的位置（紅框內、避開樹冠和農路）。${this.asstJob ? `　學弟正在佈 ${this.asstJob.name}……` : n >= 4 ? `　夠了就跟學弟說收工。` : ''}`
+      : n === 0
       ? (miss.length ? `去車尾拿噴漆箱（${miss.filter(i => i !== 'paint').length ? `${miss.filter(i => i !== 'paint').map(i => ITEMS[i].name).join('、')}也要有人拿；` : ''}學弟${asstName()}拿著其他的）。Q：外業地圖（航測範圍）。看著地面按 E 在那裡佈標。`
         : `選一個點，看著地面按 E 開始佈標（模板 → 噴白 → 噴黑 → 敲釘）。Q：外業地圖。`)
-      : `${this.gcps.map(g => `${g.name}${g.rtk ? '·RTK' : ''}${g.photos.close ? '·近' : ''}${g.photos.wide.length ? `·遠${g.photos.wide.length}` : ''}`).join('　')}\n對著標按 E 用 RTK 測坐標；C 手機拍點位照片（近照 1 張、遠照 2 張）。${n >= 4 ? `都好了就跟學弟${asstName()}說收工。` : '工單要四角＋中央，至少 4 點。'}`;
+      : `${done}\n對著標按 E 用 RTK 測坐標；C 手機拍點位照片（近照 1 張、遠照 2 張）。${n >= 4 ? `都好了就跟學弟${asstName()}說收工。` : '工單要四角＋中央，至少 4 點。'}`;
     fd.panel(n === 0 ? 'site' : 'observe', `${txt}\n材料：白漆 ${Math.round(this.paint.white / 130 * 100)}%　黑漆 ${Math.round(this.paint.black / 90 * 100)}%　鋼釘 ${this.nails.left} 根`);
   }
 
@@ -276,21 +285,22 @@ export class GcpJob {
       this.askedWhere = true;
       setTimeout(() => ui.toast(`學弟${asstName()}：「學長，請告訴我要在哪裡佈標！（看著地面按 E）」`, 'info', 5000), 700);
     }
-    // 噴漆、拍照的時候學弟緊跟在「玩家後面」，不要擋住鏡頭
-    const tuck = gcpBench.active || !!this.phone;
-    if (tuck) {
-      const pl = this.fd.app.player as AnyObj;
-      let tx: number, tz: number;
-      if (this.phone) {
-        // 第一人稱取景：躲到玩家背後
-        const yaw = (pl.euler?.y ?? 0) as number;
-        tx = p.x + Math.sin(yaw) * 2.2; tz = p.z + Math.cos(yaw) * 2.2;
+    // 噴漆、拍照的時候乾脆把學弟藏起來，怎麼閃都會擋到鏡頭
+    if (this.phone) this.phoneTick();
+    const hideAsst = (gcpBench.active || !!this.phone) && a.state !== 'hidden';
+    if (a.state !== 'hidden') a.g.visible = !hideAsst;
+    if (hideAsst) { this.ev.update(dt); if (this.map) this.drawMap(); return; }
+    // 學弟自己去佈點：走過去 → 佈 → 回報
+    const job = this.asstJob;
+    if (job) {
+      if (job.walking) {
+        if (this.walk(job.x + 0.9, job.z + 0.9, 2.6, dt)) { job.walking = false; job.t = 0; a.state = 'work'; ui.toast(`學弟${asstName()}開始佈 ${job.name}……`, 'info', 2600); }
       } else {
-        // 2.5D 俯視：鏡頭在北邊，所以站到玩家南邊 (+z)
-        tx = p.x + 1.5; tz = p.z + 2.4;
+        job.t += dt;
+        this.face(job.x, job.z);
+        animateWalk(a.g, a.t, 0);
+        if (job.t > 7) { a.state = 'follow'; this.asstFinishGcp(job); }
       }
-      if (Math.hypot(a.g.position.x - tx, a.g.position.z - tz) > 0.5) this.walk(tx, tz, 3.0, dt);
-      else { this.face(p.x, p.z); animateWalk(a.g, a.t, 0); }
       if (this.map) this.drawMap();
       this.ev.update(dt);
       return;
@@ -436,6 +446,7 @@ export class GcpJob {
 
   private canLay(): boolean {
     const fd = this.fd;
+    if (this.asstLays) return false;
     return !this.phone && !rtkBench.active && this.on && !this.laid && ['site', 'observe'].includes(fd.phase) && !fd.inTruck && !gcpBench.active && this.gcps.length < MAX_GCP;
   }
 
@@ -549,6 +560,89 @@ export class GcpJob {
         ui.thought('（工單要四角＋中央，每個點都要測坐標、拍照。）', 5200);
       }, 1200);
     }
+    this.refreshHint();
+  }
+
+  /** 第一個點的標、RTK、照片都做完了嗎 */
+  private firstDone(): boolean {
+    const g = this.gcps[0];
+    return !!g && !!g.rtk && !!g.photos.close && g.photos.wide.length >= 2;
+  }
+
+  /** 第一個點做完：學弟想試試看剩下的 */
+  maybeOfferAsstLay() {
+    if (this.asstOffered || this.asstLays || this.laid) return;
+    if (!this.firstDone() || this.gcps.length >= MAX_GCP) return;
+    if (this.benchBusy() || this.phone || this.fd.inTruck || this.fd.app.player.isModalOpen()) return;
+    this.asstOffered = true;
+    const nm = `學弟${asstName()}`;
+    setTimeout(() => {
+      if (this.fd.app.player.isModalOpen() || this.benchBusy()) { this.asstOffered = false; return; }
+      ui.faceSpeaker(this.asst.g);
+      ui.showDialog(nm, '「學長，我看你佈一個就會了！剩下幾個讓我試試看好不好？<br>你用外業地圖指位置，我過去噴、量坐標、拍照，一條龍。」', [
+        { id: 'yes', text: '「好啊，剩下的你來。我負責挑位置。」', reply: '「收到！學長你開外業地圖點一下，我就過去。」', score: 0, tag: '' },
+        { id: 'no', text: '「不用，我自己做比較快。」', reply: '「好喔……那我幫你拿東西。」', score: 0, tag: '' },
+      ], (o) => {
+        this.relock();
+        if (o.id !== 'yes') return;
+        this.asstLays = true;
+        ui.toast('點右下角的「外業地圖」，在地圖上點一下就指定下一個點的位置。', 'info', 6000);
+        this.refreshHint();
+      });
+    }, 1400);
+  }
+
+  /** 在外業地圖上點一個位置：叫學弟去佈 */
+  private pickOnMap(cx: number, cy: number) {
+    if (!this.asstLays || !this.mapCanvas) return;
+    if (this.asstJob) { ui.toast(`學弟${asstName()}正在佈 ${this.asstJob.name}，等他做完。`, 'info', 2600); return; }
+    if (this.gcps.length >= MAX_GCP) { ui.toast('已經佈滿五個點了。', 'info', 2400); return; }
+    const r = this.mapCanvas.getBoundingClientRect();
+    const { lx, lz } = mapToLocal(this.mapCanvas.width, this.mapCanvas.height,
+      (cx - r.left) / r.width * this.mapCanvas.width, (cy - r.top) / r.height * this.mapCanvas.height);
+    const w = toWorld(lx, lz);
+    if (this.gcps.some(g => Math.hypot(g.x - w.x, g.z - w.z) < 3)) { sfx.error(); ui.toast('這裡太靠近已經佈好的點了。', 'warn', 2400); return; }
+    const spot = this.analyze(w.x, w.z);
+    if (!spot.ok) { sfx.error(); ui.toast(spot.why!, 'warn', 3000); return; }
+    const name = `GCP-0${this.nextNo}`;
+    this.asstJob = { x: spot.x, z: spot.z, name, t: 0, walking: true };
+    this.closeMap();
+    sfx.pickup();
+    ui.toast(`學弟${asstName()}：「${name}，收到！我過去佈。」`, 'good', 3200);
+    this.refreshHint();
+  }
+
+  /** 學弟自己佈完一個點 (標、RTK、照片一次完成)。品質看早上有沒有好好交代 */
+  private asstFinishGcp(j: { x: number; z: number; name: string }) {
+    const spot = this.analyze(j.x, j.z);
+    if (!spot.ok) { ui.toast(`學弟${asstName()}：「學長，這裡噴不了……${spot.why}」`, 'warn', 3600); this.asstJob = null; this.refreshHint(); return; }
+    // 嚴肅交代過、昨天有教他 → 噴得漂亮；隨口交代 → 普通
+    const q = this.loadMode === 'serious' ? 0.92 : this.mentor2 >= 1 ? 0.88 : 0.78;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g2 = c.getContext('2d')!;
+    const px = (m: number) => (m / 1.8 + 0.5) * 256;
+    const a = 0.55 + 0.45 * q;
+    g2.fillStyle = `rgba(244,244,238,${a})`; g2.fillRect(px(-0.6), px(-0.6), px(0.6) - px(-0.6), px(0.6) - px(-0.6));
+    g2.fillStyle = `rgba(22,23,26,${a})`; g2.fillRect(px(0), px(0), px(0.6) - px(0), px(0.6) - px(0)); g2.fillRect(px(-0.6), px(-0.6), px(0) - px(-0.6), px(0) - px(-0.6));
+    this.addGcp(j.name, spot, {
+      rot: Math.random() * 0.3 - 0.15, whiteCov: q, blackCov: q, overflow: (1 - q) * 0.3,
+      contrast: 0.72 * q, paintScore: Math.round(q * 95), nailTilt: (1 - q) * 5, nailHits: 4,
+      nailsUsed: 1, fingers: 0, loose: spot.soil > 0.5, canvas: c,
+    }, true);
+    const g = this.gcps[this.gcps.length - 1];
+    g.notes.push(`學弟${asstName()}自己佈的`);
+    // 他自己量坐標、拍照
+    g.rtk = spot.canopy ? { sol: 'float', h: 22, v: 36, tiltMm: 5, falseFix: false, wait: 30 }
+      : { sol: 'fix', h: spot.bld.d < 4 ? 2.2 : 1.1, v: 1.9, tiltMm: 4 + (1 - q) * 6, falseFix: false, wait: 12 };
+    const refs = refPoints()
+      .map(r => ({ r, d: Math.hypot(r.x - g.x, r.z - g.z) }))
+      .sort((m, n) => m.d - n.d).slice(0, 2).map(m => m.r);
+    g.photos = { close: 'asst', wide: refs.map(r => ({ img: 'asst', ref: r.name })) };
+    this.asstJob = null;
+    this.ev.onGcpDone(g);
+    const left = MAX_GCP - this.gcps.length;
+    ui.toast(`學弟${asstName()}：「${j.name} 好了！標、坐標、照片都做完。」${left > 0 ? `還差 ${left} 個，學長再指位置。` : ''}`, 'good', 4200);
     this.refreshHint();
   }
 
@@ -979,7 +1073,7 @@ export class GcpJob {
     rtkBench.start({
       app: fd.app, name: g.name, x: g.x, y: g.y, z: g.z, yaw,
       env: { canopy: g.spot.canopy, bldD: g.spot.bld.d }, wind: this.wind, asstName: asstName(),
-      onDone: (r) => { if (r) { g.rtk = r; if (g.rtkStale) { g.rtkStale = false; g.notes.push('踢動後重測了 RTK'); } this.refreshHint(); setTimeout(() => ui.thought(`${g.name} 坐標測好了。再用手機（C）拍點位照片：近照 1 張、遠照 2 張。`, 5500), 3300); } },
+      onDone: (r) => { if (r) { g.rtk = r; if (g.rtkStale) { g.rtkStale = false; g.notes.push('踢動後重測了 RTK'); } this.refreshHint(); this.maybeOfferAsstLay(); setTimeout(() => { if (!this.asstLays && !this.asstOffered) ui.thought(`${g.name} 坐標測好了。再用手機拍點位照片：近照 1 張、遠照 2 張。`, 5500); }, 3300); } },
     });
   }
 
@@ -1013,6 +1107,17 @@ export class GcpJob {
   }
 
   private phoneOpen(cam: THREE.Object3D) {
+    // 自動把視角轉向還缺照片的標，不用自己亂找
+    const pl = this.fd.app.player as AnyObj;
+    const need = this.gcps.filter(g => !g.photos.close || g.photos.wide.length < 2);
+    const pool = need.length ? need : this.gcps;
+    if (pool.length) {
+      const me = pl.position as THREE.Vector3;
+      const t = pool.slice().sort((m, n) => Math.hypot(m.x - me.x, m.z - me.z) - Math.hypot(n.x - me.x, n.z - me.z))[0];
+      const dx = t.x - me.x, dz = t.z - me.z, dh = Math.hypot(dx, dz) || 1;
+      pl.euler.y = Math.atan2(-dx, -dz);
+      pl.euler.x = Math.atan2((t.y + 0.1) - me.y, dh);
+    }
     ui.forceFieldbook(true);
     this.phoneHid = cam.children.filter(c => c.visible); this.phoneHid.forEach(c => { c.visible = false; });
     const d = document.createElement('div');
@@ -1024,6 +1129,39 @@ export class GcpJob {
     this.phone = d;
     (window as AnyObj).__lookMode?.(true);      // 手機版：改成第一人稱，拖曳取景
     sfx.pickup();
+  }
+
+  /** 取景時即時告訴玩家：現在對到哪個標、距離多少、這張算近照還是遠照 */
+  private phoneTick() {
+    const el = this.phone?.querySelector('.pv-rec') as HTMLElement | null;
+    const frame = this.phone?.querySelector('.pv-frame') as HTMLElement | null;
+    if (!el) return;
+    const cam = this.sm.camera as THREE.PerspectiveCamera;
+    cam.updateMatrixWorld();
+    const cands = this.gcps.map(g => {
+      const q = V(g.x, g.y, g.z).project(cam);
+      return { g, q, d: cam.position.distanceTo(V(g.x, g.y, g.z)) };
+    }).filter(c => c.q.z < 1 && Math.abs(c.q.x) < 0.92 && Math.abs(c.q.y) < 0.92);
+    cands.sort((m, n) => Math.hypot(m.q.x, m.q.y) - Math.hypot(n.q.x, n.q.y));
+    const c = cands[0];
+    let txt = '● 畫面裡沒有控制點', ok = false;
+    if (c) {
+      const { g, q, d } = c;
+      const needClose = !g.photos.close, needWide = g.photos.wide.length < 2;
+      if (d < 4.4) {
+        const mid = Math.hypot(q.x, q.y) <= 0.55;
+        ok = mid && needClose;
+        txt = `${g.name}　${d.toFixed(1)} m　${!needClose ? '近照已有' : mid ? '近照 OK，可以拍' : '把標對到畫面中間'}`;
+      } else if (d <= 45) {
+        ok = needWide;
+        txt = `${g.name}　${d.toFixed(1)} m　${needWide ? `遠照 ${g.photos.wide.length}／2・畫面要帶到參考地物` : '遠照已有 2 張'}`;
+      } else {
+        txt = `${g.name}　${d.toFixed(0)} m　太遠了，走近一點`;
+      }
+    }
+    if (el.textContent !== txt) el.textContent = txt;
+    el.classList.toggle('ok', ok);
+    frame?.classList.toggle('ok', ok);
   }
 
   private shoot() {
@@ -1048,17 +1186,19 @@ export class GcpJob {
     const ray = new THREE.Raycaster(cam.position.clone(), to.clone().sub(cam.position).normalize(), 0.3, d - 0.9);
     const blockers = [this.site!.group, ...(this.sm.trees as THREE.Object3D[]).filter(t => t.parent), this.fd.truck.group];
     if (ray.intersectObjects(blockers, true).length) { ui.toast(`${g.name} 被擋住了，拍不到標。`, 'info', 2200); return; }
-    if (d < 3.6) {
-      if (Math.hypot(q.x, q.y) > 0.4) { ui.toast(`${g.name} 近照：標沒有在畫面中間，重拍一張比較好。`, 'warn', 2400); return; }
+    if (d < 4.4) {
+      if (Math.hypot(q.x, q.y) > 0.55) { ui.toast(`${g.name} 近照：標沒有在畫面中間，重拍一張比較好。`, 'warn', 2400); return; }
       g.photos.close = img;
+      setTimeout(() => this.maybeOfferAsstLay(), 600);
       ui.toast(`${g.name} 近照 ✓`, 'good', 1800);
-    } else if (d >= 5 && d <= 40) {
+    } else if (d >= 4.4 && d <= 45) {
       const refs = refPoints().filter(r => Math.hypot(r.x - cam.position.x, r.z - cam.position.z) < 70 && inFrame(r.x, this.sm.heightAt(r.x, r.z) + r.y, r.z, 0.95));
       const used = new Set(g.photos.wide.map(w => w.ref));
       const ref = refs.find(r => !used.has(r.name)) || refs[0];
       if (g.photos.wide.length >= 2 && ref && !used.has(ref.name)) g.photos.wide.shift();
       if (g.photos.wide.length >= 2) { ui.toast(`${g.name} 遠照已經有兩張了。`, 'info', 1800); return; }
       g.photos.wide.push({ img, ref: ref ? ref.name : '' });
+      setTimeout(() => this.maybeOfferAsstLay(), 600);
       ui.toast(ref ? `${g.name} 遠照 ${g.photos.wide.length}／2（參考：${ref.name}）` : `${g.name} 遠照 ${g.photos.wide.length}／2`, 'good', 2200);
     } else {
       ui.toast(`${g.name}：這個距離不像近照也不像遠照。`, 'info', 2000);
@@ -1345,6 +1485,12 @@ export class GcpJob {
       const h = this.uav.home;
       return { x: h.x, z: h.z + 1.2, label: '規劃航線、起飛', reach: 1.2 };
     }
+    // 交給學弟佈點：玩家只要開外業地圖指位置
+    if (this.asstLays && this.gcps.length < MAX_GCP) {
+      if (this.asstJob) { const a2 = this.asst?.g; return a2 ? { x: a2.position.x, z: a2.position.z, label: `學弟${asstName()}正在佈 ${this.asstJob.name}`, reach: 3.0 } : null; }
+      const p2 = fd.app.player.position;
+      return { x: p2.x, z: p2.z, label: this.map ? '在地圖上點一下，指下一個點的位置' : '打開「外業地圖」，指下一個點的位置', reach: 99 };
+    }
     // 上午：佈標 → RTK → 照片
     const p = fd.app.player.position;
     if (this.gcps.length < 4 && !fd.carrying && !this.have('paint', p.x, p.z)) {
@@ -1398,6 +1544,12 @@ export class GcpJob {
     if (cl) cl.onclick = (ev) => { ev.stopPropagation(); this.closeMap(); };
     this.map = d;
     this.mapCanvas = d.querySelector('canvas');
+    if (this.asstLays && this.gcps.length < MAX_GCP) {
+      d.classList.add('gt-pick');
+      const foot = d.querySelector('.gt-foot') as HTMLElement | null;
+      if (foot) foot.innerHTML = `<b>在地圖上點一下</b>，學弟${asstName()}就過去佈下一個點（紅框內、避開樹冠和農路）。`;
+      this.mapCanvas?.addEventListener('pointerdown', (ev: PointerEvent) => { ev.preventDefault(); ev.stopPropagation(); this.pickOnMap(ev.clientX, ev.clientY); });
+    }
     this.hintedTablet = true;
     sfx.pickup();
     this.drawMap();
@@ -1531,7 +1683,7 @@ export class GcpJob {
   }
   snapshot(): AnyObj {
     return {
-      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
+      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, asstLays: this.asstLays, asstOffered: this.asstOffered, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
       asst: { x: this.asst.g.position.x, z: this.asst.g.position.z, state: this.asst.state, visible: this.asst.g.visible },
       gcps: this.gcps.map(g => ({ name: g.name, spot: g.spot, res: g.res, img: g.canvas.toDataURL('image/png'), rtk: g.rtk || null, photos: g.photos, notes: g.notes, paw: !!g.paw, washed: !!g.washed, crushed: !!g.crushed, busRisk: !!g.busRisk, covered: !!g.covered, rtkStale: !!g.rtkStale, shifted: !!g.shifted, seenClear: !!g.seenClear, hiddenWhy: g.hiddenWhy || '' })),
       ev: this.ev.snapshot(),
@@ -1548,6 +1700,7 @@ export class GcpJob {
     this.loadMode = s.loadMode || ''; this.forgotAt = s.forgotAt || null; this.fetchBack = !!s.fetchBack;
     this.loadBy = s.loadBy || ''; this.asstChecked = !!s.asstChecked;
     this.laid = !!s.laid;
+    this.asstLays = !!s.asstLays; this.asstOffered = !!s.asstOffered;
     this.ev.restore(s.ev);
     this.uav.restore(s.uav);
     (s.gcps || []).forEach((g: AnyObj) => {

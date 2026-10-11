@@ -574,3 +574,9 @@ kbd.cap.menu-cap, kbd.cap.cap-brand { display: inline-flex !important; }
 /* 手簿攤在畫面下方時，「放下」之類的側邊鍵再往上讓一點 */
 body:has(#level-book .level-book) .m-bar-side,
 body:has(.level-book) .m-bar-side { bottom: calc(var(--sab) + var(--m-bar-h) + 230px); }
+
+/* ---------- 點位照片：取景時的即時判定 ---------- */
+.pv-rec { transition: background .15s, color .15s; }
+.pv-rec.ok { background: #15803d !important; color: #fff !important; }
+.pv-frame.ok .pv-c { border-color: #4ade80 !important; }
+.pv-frame.ok .pv-cross { background: #4ade80 !important; }
