@@ -12,6 +12,8 @@ export interface QteOpts {
   onStep?: (i: number) => void;
   /** 時間放寬倍數 (有人先喊預警) */
   slow?: number;
+  /** 手機版用：自訂每一波的回應選項 (桌機版用按鍵，忽略這個欄位) */
+  responses?: { good: string[]; bad: string[] };
   onDone: (ok: boolean) => void;
 }
 

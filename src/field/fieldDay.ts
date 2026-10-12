@@ -897,9 +897,15 @@ export class FieldDay {
     }
 
     if (this.phase === 'prep') {
-      if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
-      // 交給學弟裝車而且沒自己檢查過：就照他說的「都裝好了」，少了什麼到現場才會知道
       const sub = this.sub as AnyObj | null;
+      if (this.carrying) {
+        // 手上拿的正是學弟多搬的那件：指引帶你放回架上，不要又放回後斗
+        if (sub?.asstChecked && sub?.asstExtra === this.carrying) {
+          const back = this.shelfTarget(this.carrying);
+          if (back) return back;
+        }
+        return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+      }
       const asst = sub?.asst?.g as THREE.Object3D | undefined;
       const atAsst = (label: string) => (asst ? { x: asst.position.x, z: asst.position.z, label, reach: 2.2, obj: asst } : { ...door(), label, reach: 1.3 });
       if (sub?.asstLoading) return { ...atAsst('學弟在搬，先點左上角對一次清單'), obj: undefined, reach: 3.0 };
@@ -911,6 +917,14 @@ export class FieldDay {
         if (this.grid.has(it)) continue;
         const g = this.ground.find(x => x.item === it);
         if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `到器材架拿${nm(it)}`, reach: 1.1, obj: g.obj };
+      }
+      // 學弟多搬的那件：自己檢查過之後，指引帶你把它放回架上
+      const ex = sub?.asstExtra as ItemId | undefined;
+      if (ex && sub?.asstChecked) {
+        if (this.carrying === ex) return this.shelfTarget(ex) || { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
+        if (this.grid.has(ex)) return { ...tail(), label: `把學弟多搬的${nm(ex)}拿下來`, reach: 1.4, item: ex };
+        const gx = this.ground.find(x => x.item === ex);
+        if (gx && !this.onShelf(gx.uid)) return { x: gx.obj.position.x, z: gx.obj.position.z, label: `把${nm(ex)}撿起來放回架上`, reach: 1.3, obj: gx.obj, item: ex };
       }
       return { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
     }
@@ -1165,6 +1179,19 @@ export class FieldDay {
     if (!spot) return false;
     spot.uid = this.spawnGround(item, spot.pos, spot.rotY);
     return true;
+  }
+
+  /** 把東西放回貨架時的指引目標：原位附近的那層板子 (點了會開平視器材架) */
+  shelfTarget(item: ItemId): GuideTarget | null {
+    const pos = this.shelfPos(item);
+    if (!pos) return null;
+    let best: THREE.Object3D | null = null, bd = 1e9;
+    for (const b of this.shelfBoards) {
+      const w = b.getWorldPosition(new THREE.Vector3());
+      const d = Math.hypot(w.x - pos.x, w.z - pos.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return { x: pos.x, z: pos.z - 2.4, label: `把${ITEMS[item].name}放回器材架`, reach: 1.2, obj: best || undefined, item };
   }
 
   /** 某件設備的貨架原位 (或任何空位) */

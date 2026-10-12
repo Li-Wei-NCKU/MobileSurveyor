@@ -620,3 +620,8 @@ body.m-driving .level-book, body.m-driving #level-book { display: none !importan
 .m-tblock.wanted { border-color: #a07400 !important; box-shadow: 0 0 0 3px rgba(255,210,63,.75), 0 4px 10px rgba(0,0,0,.25); opacity: 1; filter: none; }
 .m-tblock.wanted .wt { position: absolute; top: 2px; left: 3px; font: 800 9px var(--font-ui); font-style: normal;
   color: #3b2a00; background: var(--survey-yellow); border-radius: 4px; padding: 1px 4px; }
+
+/* 對清單結果：少了什麼／多帶了什麼 */
+.dialog-line b.bad { color: #ff9b94; }
+.dialog-line b.warn { color: #ffd23f; }
+.dialog-line b.ok { color: #86efac; }

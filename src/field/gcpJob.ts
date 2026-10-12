@@ -123,6 +123,8 @@ export class GcpJob {
   nails = { left: 7 };
   /** 早上怎麼交代學弟搬東西 ('' = 沒講) */
   private loadMode: '' | 'serious' | 'help' | 'self' = '';
+  /** 學弟多搬上車的那件 (用不到的) */
+  asstExtra: ItemId | null = null;
   /** 學弟收工時忘在現場的東西 */
   private forgotAt: string | null = null;
   private fetchBack = false;
@@ -150,7 +152,7 @@ export class GcpJob {
     this.kit.clear();
     this.paint = { white: 130, black: 90 };
     this.nails = { left: 7 };
-    this.loadMode = ''; this.forgotAt = null; this.fetchBack = false; this.hammerOut = '';
+    this.loadMode = ''; this.forgotAt = null; this.fetchBack = false; this.hammerOut = ''; this.asstExtra = null;
     const a = Math.random() * Math.PI * 2, s = 1.4 + Math.random() * 1.8;
     this.wind = { x: Math.cos(a) * s, z: Math.sin(a) * s };
     this.laid = false;
@@ -814,10 +816,15 @@ export class GcpJob {
     const fd = this.fd;
     const need = JOBS.gcp.required.slice();
     let list: ItemId[] = need.slice();
+    this.asstExtra = null;
     if (!this.checklist) {
       const roll = Math.random();
       if (roll < 0.4) list.splice(Math.floor(Math.random() * list.length), 1);
-      else if (roll < 0.8) { const ex: ItemId[] = ['prism', 'tripod', 'cones', 'staff', 'tribrach']; list.push(ex[Math.floor(Math.random() * ex.length)]); }
+      else if (roll < 0.8) {
+        const ex: ItemId[] = ['prism', 'tripod', 'cones', 'staff', 'tribrach'];
+        const pick = ex[Math.floor(Math.random() * ex.length)];
+        if (fd.yardItemPos(pick)) { list.push(pick); this.asstExtra = pick; }
+      }
     }
     list = list.filter(it => !fd.grid.has(it) && fd.carrying !== it && fd.yardItemPos(it));
     // 照離車近的先搬，少走冤枉路 (手機版乾等很久很煩)
@@ -900,16 +907,27 @@ export class GcpJob {
     ], (o) => {
       a.state = 'yard';
       this.showClipboard(false);
-      if (o.id === 'check') {
-        this.asstChecked = true;
-        const miss = fd.packList().filter(x => !x.loaded && !x.inHand);
-        setTimeout(() => {
-          if (miss.length) ui.toast(`你自己對了一次清單：後斗少了${miss.map(x => x.name).join('、')}。`, 'warn', 5600);
-          else ui.toast('你自己對了一次清單：今天要用的都在後斗。', 'good', 3600);
-        }, 500);
-        fd.openUnload();
-      }
+      if (o.id === 'check') { this.asstChecked = true; this.showCheckResult(); }
       else this.relock();
+    });
+  }
+
+  /** 自己對完清單：少了什麼、多帶了什麼，一次講清楚 */
+  private showCheckResult() {
+    const fd = this.fd;
+    const miss = fd.packList().filter(x => !x.loaded && !x.inHand).map(x => x.name);
+    const ex = this.asstExtra && fd.grid.has(this.asstExtra) ? ITEMS[this.asstExtra].name : '';
+    const rows = [
+      miss.length ? `<b class="bad">少了：</b>${miss.join('、')}（去器材架拿）` : '<b class="ok">必帶設備：一件不少</b>',
+      ex ? `<b class="warn">多帶了：</b>${ex}（今天用不到，放回架上）` : '',
+    ].filter(Boolean).join('<br>');
+    ui.showDialog('（你自己對了一次清單）', rows, [
+      { text: miss.length || ex ? '「學弟，再調整一下。」' : '「好，都對。」',
+        reply: miss.length || ex ? '（照下面的指引把差額處理掉再出發。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
+    ], () => {
+      this.relock();
+      if (miss.length || ex) ui.toast('下面的指引會帶你把少的拿上車、多的放回架上。', 'info', 4200);
+      else fd.openUnload();
     });
   }
 
@@ -1713,7 +1731,7 @@ export class GcpJob {
   }
   snapshot(): AnyObj {
     return {
-      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, asstLays: this.asstLays, asstOffered: this.asstOffered, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
+      asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, asstLays: this.asstLays, asstOffered: this.asstOffered, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, asstExtra: this.asstExtra, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
       asst: { x: this.asst.g.position.x, z: this.asst.g.position.z, state: this.asst.state, visible: this.asst.g.visible },
       gcps: this.gcps.map(g => ({ name: g.name, spot: g.spot, res: g.res, img: g.canvas.toDataURL('image/png'), rtk: g.rtk || null, photos: g.photos, notes: g.notes, paw: !!g.paw, washed: !!g.washed, crushed: !!g.crushed, busRisk: !!g.busRisk, covered: !!g.covered, rtkStale: !!g.rtkStale, shifted: !!g.shifted, seenClear: !!g.seenClear, hiddenWhy: g.hiddenWhy || '' })),
       ev: this.ev.snapshot(),
@@ -1727,7 +1745,7 @@ export class GcpJob {
     if (s.paint) this.paint = s.paint;
     if (s.wind) this.wind = s.wind;
     if (typeof s.nails === 'number') this.nails = { left: s.nails };
-    this.loadMode = s.loadMode || ''; this.forgotAt = s.forgotAt || null; this.fetchBack = !!s.fetchBack;
+    this.loadMode = s.loadMode || ''; this.forgotAt = s.forgotAt || null; this.fetchBack = !!s.fetchBack; this.asstExtra = s.asstExtra || null;
     this.loadBy = s.loadBy || ''; this.asstChecked = !!s.asstChecked;
     this.laid = !!s.laid;
     this.asstLays = !!s.asstLays; this.asstOffered = !!s.asstOffered;

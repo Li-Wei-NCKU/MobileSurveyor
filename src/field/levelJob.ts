@@ -246,7 +246,7 @@ export class LevelJob {
       notes: this.notes, holdLog: this.holdLog, uncleDone: this.uncleDone, dogDone: this.dogDone, scooterDone: this.scooterDone,
       aJob: job, aT: this.aT, rodTilt: this.rodTilt, reloc: this.reloc, asstName: asstName(), asstLoaded: this.asstLoaded || this.asstLoading,
       cones: this.cones, coneBlock: this.coneBlock, policeStage: this.policeStage === 'come' ? 'wait' : this.policeStage,
-      truckDone: this.truckDone, wrongPlanned: this.wrongPlanned, wrongDone: this.wrongDone, rodWrong: this.rodWrong, wrongOs: this.wrongOs, caughtWrong: this.caughtWrong, kidsDone: this.kidsDone, uncle2: this.uncle2, mentor: this.mentor,
+      truckDone: this.truckDone, wrongPlanned: this.wrongPlanned, wrongDone: this.wrongDone, rodWrong: this.rodWrong, wrongOs: this.wrongOs, caughtWrong: this.caughtWrong, kidsDone: this.kidsDone, uncle2: this.uncle2, mentor: this.mentor, asstExtra: this.asstExtra,
       tps: this.tps.map(t => ({ name: t.name, x: t.x, z: t.z, plate: !!t.plate, sink: t.sink })),
       rodAt: ref(this.rodAt), waitingPlate: ref(this.waitingPlate),
       stations: this.stations.map(st => ({ x: st.x, z: st.z, back: obs(st.back), fore: obs(st.fore) })),
@@ -262,7 +262,7 @@ export class LevelJob {
   restore(s: AnyObj) {
     this.reset();
     setAsstName(s.asstName);
-    ['haveStaff', 'havePlate', 'plPlates', 'swapped', 'carrySet', 'asstForgot', 'asstChecked', 'loadBy', 'readCount', 'tiltPlanned', 'focus', 'finished', 'bookOut', 'notes', 'holdLog', 'uncleDone', 'dogDone', 'scooterDone', 'aJob', 'aT', 'rodTilt', 'reloc', 'coneBlock', 'policeStage', 'truckDone', 'wrongPlanned', 'wrongDone', 'rodWrong', 'wrongOs', 'caughtWrong', 'kidsDone', 'asstLoaded', 'uncle2', 'mentor']
+    ['haveStaff', 'havePlate', 'plPlates', 'swapped', 'carrySet', 'asstForgot', 'asstChecked', 'loadBy', 'readCount', 'tiltPlanned', 'focus', 'finished', 'bookOut', 'notes', 'holdLog', 'uncleDone', 'dogDone', 'scooterDone', 'aJob', 'aT', 'rodTilt', 'reloc', 'coneBlock', 'policeStage', 'truckDone', 'wrongPlanned', 'wrongDone', 'rodWrong', 'wrongOs', 'caughtWrong', 'kidsDone', 'asstLoaded', 'uncle2', 'mentor', 'asstExtra']
       .forEach(k => { if (s[k] !== undefined) (this as AnyObj)[k] = s[k]; });
     if (s.cones) {
       this.placeCones(s.cones.x, s.cones.z ?? ROAD_Z + 3.3, !!s.cones.borrowed);
@@ -351,7 +351,7 @@ export class LevelJob {
     this.notes = [];
     this.uncleDone = this.dogDone = this.scooterDone = false;
     this.swapped = false; this.plPlates = false; this.aJob = ''; this.aT = 0;
-    this.asstForgot = null; this.asstChecked = false; this.prepHinted = false; this.loadBy = '';
+    this.asstForgot = null; this.asstChecked = false; this.prepHinted = false; this.loadBy = ''; this.asstExtra = null;
     this.endHold();
     this.holdLog = [];
     this.clearArrows();
@@ -580,7 +580,7 @@ export class LevelJob {
       case 'wait':
         this.face(a, p.x, p.z);
         // 阿伯走到旁邊就自己開口
-        if (a.kind === 'uncle' && !this.fd.app.player.isModalOpen() && !this.fd.inTruck) { a.state = 'talking'; this.talkUncle(a); }
+        if (a.kind === 'uncle' && !this.fd.app.player.isModalOpen() && !this.fd.inTruck && !this.rushBusy()) { a.state = 'talking'; this.talkUncle(a); }
         return;
       case 'yard':
       case 'idle':
@@ -615,7 +615,7 @@ export class LevelJob {
       // ---- 警察
       case 'pwait':
         this.face(a, p.x, p.z);
-        if (!this.fd.app.player.isModalOpen() && !this.fd.inTruck) { a.state = 'talking'; this.talkPolice(a); }
+        if (!this.fd.app.player.isModalOpen() && !this.fd.inTruck && !this.rushBusy()) { a.state = 'talking'; this.talkPolice(a); }
         return;
       case 'pcones':
         this.face(a, p.x, p.z);
@@ -666,7 +666,7 @@ export class LevelJob {
         return;
       case 'block':
         // 擋在望遠鏡前的阿伯：玩家一走近，他就自己開口
-        if (a.kind === 'uncle' && Math.hypot(p.x - a.g.position.x, p.z - a.g.position.z) < 3.5 && !this.fd.app.player.isModalOpen() && !this.fd.inTruck) { a.state = 'talking'; this.talkUncle(a); }
+        if (a.kind === 'uncle' && Math.hypot(p.x - a.g.position.x, p.z - a.g.position.z) < 3.5 && !this.fd.app.player.isModalOpen() && !this.fd.inTruck && !this.rushBusy()) { a.state = 'talking'; this.talkUncle(a); }
         return;
     }
   }
@@ -1621,6 +1621,8 @@ export class LevelJob {
   // ---------------------------------------------------------------- 出發前：學弟幫忙裝車 (常常裝錯)
   private asstLoading = false;
   private asstLoaded = false;
+  /** 學弟多搬上車的那件 (用不到的)；自己檢查後指引會帶你搬回架上 */
+  asstExtra: ItemId | null = null;
   private handVis: THREE.Object3D | null = null;
 
   /** 整備儀器階段一開始：告訴玩家可以自己搬，也可以叫學弟搬 */
@@ -1689,7 +1691,12 @@ export class LevelJob {
     const miss = avail.length ? avail[Math.floor(Math.random() * avail.length)] : null;
     this.asstForgot = miss;
     let list = need.filter(it => it !== miss);
-    if (Math.random() < 0.3) { const ex: ItemId[] = ['paint', 'prism', 'hammer', 'gnss', 'tribrach']; list.push(ex[Math.floor(Math.random() * ex.length)]); } // 順便多搬一件
+    this.asstExtra = null;
+    if (Math.random() < 0.3) {
+      const ex: ItemId[] = ['paint', 'prism', 'hammer', 'gnss', 'tribrach'];
+      const pick = ex[Math.floor(Math.random() * ex.length)];
+      if (fd.yardItemPos(pick)) { list.push(pick); this.asstExtra = pick; }   // 順便多搬一件用不到的
+    }
     // 照「離車近的先搬」排，少走冤枉路 (手機版乾等很久很煩)
     const tk = fd.truck.pos;
     list = list.filter(it => !fd.grid.placed.some(p => p.item === it) && fd.carrying !== it && fd.yardItemPos(it))
@@ -1735,17 +1742,27 @@ export class LevelJob {
       { id: 'trust', text: `「沒關係，學弟${asstName()}我相信你。」`, reply: `「謝謝學長！」（學弟${asstName()}看起來很開心）`, score: 0, tag: '' },
     ], (o) => {
       a.state = 'idle';
-      if (o.id === 'check') {
-        this.asstChecked = true;
-        // 自己對過清單就該知道結果，不能只看學弟說「都在後斗」
-        const miss = fd.packList().filter(x => !x.loaded && !x.inHand);
-        setTimeout(() => {
-          if (miss.length) ui.toast(`你自己對了一次清單：後斗少了${miss.map(x => x.name).join('、')}。`, 'warn', 5600);
-          else ui.toast('你自己對了一次清單：今天要用的都在後斗。', 'good', 3600);
-        }, 500);
-        (fd as AnyObj).openUnload?.();
-      }
+      if (o.id === 'check') { this.asstChecked = true; this.showCheckResult(); }
       else this.relock();
+    });
+  }
+
+  /** 自己對完清單：少了什麼、多帶了什麼，一次講清楚，再開後斗 */
+  private showCheckResult() {
+    const fd = this.fd;
+    const miss = fd.packList().filter(x => !x.loaded && !x.inHand).map(x => x.name);
+    const ex = this.asstExtra && fd.grid.has(this.asstExtra) ? ITEMS[this.asstExtra].name : '';
+    const rows = [
+      miss.length ? `<b class="bad">少了：</b>${miss.join('、')}（去器材架拿）` : '<b class="ok">必帶設備：一件不少</b>',
+      ex ? `<b class="warn">多帶了：</b>${ex}（今天用不到，放回架上）` : '',
+    ].filter(Boolean).join('<br>');
+    ui.showDialog('（你自己對了一次清單）', rows, [
+      { text: miss.length || ex ? '「學弟，再調整一下。」' : '「好，都對。」',
+        reply: miss.length || ex ? '（照下面的指引把差額處理掉再出發。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
+    ], () => {
+      this.relock();
+      if (miss.length || ex) ui.toast('下面的指引會帶你把少的拿上車、多的放回架上。', 'info', 4200);
+      else (fd as AnyObj).openUnload?.();
     });
   }
 
@@ -1795,8 +1812,19 @@ export class LevelJob {
   }
 
   /** 阿伯回訪：台詞依第一天的回答而不同 */
+  /**
+   * 阿黃／小朋友正在衝：最高優先，其他事件 (阿伯、騎士、大貨車、警察) 先等。
+   * 不然玩家正要跑過去擋，就被對話框卡住了。
+   */
+  rushBusy(): boolean {
+    if (qteActive()) return true;
+    if (document.querySelector('.m-dash')) return true;
+    return this.actors.some(a => ['dog', 'kid'].includes(a.kind) && ['rush', 'intro', 'kidRush', 'kidFollow', 'qte'].includes(a.state));
+  }
+
   private spawnUncle() {
     if (this.uncleDone || this.fd.phase !== 'observe') return;
+    if (this.rushBusy()) { setTimeout(() => this.spawnUncle(), 5000); return; }   // 阿黃／小朋友優先
     this.uncleDone = true;
     const a = this.spawn('uncle', 38, 53.4);
     const said = this.pr.uncle;
@@ -1864,6 +1892,7 @@ export class LevelJob {
   private spawnScooter() {
     const st = this.cur;
     if (this.scooterDone || !this.inst || !st || this.swapped) return;
+    if (this.rushBusy()) { setTimeout(() => this.spawnScooter(), 4000); return; }
     this.scooterDone = true;
     const ix = this.inst.position.x, iz = this.inst.position.z;
     const B = st.back.pt;
@@ -1918,6 +1947,8 @@ export class LevelJob {
 
   /** 阿黃回訪：第一天撞過腳架 → 又來衝；被攔住過 → 來撒嬌 */
   private maybeDog() {
+    // 正在跟人講話就先等講完，兩個事件疊在一起玩家會手忙腳亂
+    if (document.querySelector('.dialog-backdrop') || qteActive()) { setTimeout(() => this.maybeDog(), 2500); return; }
     this.dogDone = true;
     const dog = this.pr.dog;
     if (!dog || !this.inst) return;
@@ -2051,7 +2082,7 @@ export class LevelJob {
   }
 
   private policeTick(dt: number, p: THREE.Vector3) {
-    if (this.policeStage === 'wait' && this.policeT > 0) {
+    if (this.policeStage === 'wait' && this.policeT > 0 && !this.rushBusy()) {
       this.policeT -= dt;
       if (this.policeT <= 0) this.spawnPolice();
     }
@@ -2168,6 +2199,7 @@ export class LevelJob {
   // ================================================================
   private spawnLorry() {
     if (!this.inst || this.lorry) return;
+    if (this.rushBusy()) { setTimeout(() => this.spawnLorry(), 4000); return; }
     const g = buildLorry();
     g.rotation.y = Math.PI; // 朝 -X
     const x = this.inst.position.x + 52, z = ROAD_Z - 1.7;
@@ -2231,6 +2263,7 @@ export class LevelJob {
     if (this.kidsDone || this.finished) return;
     const tp = this.kidTarget();
     if (!tp) return;
+    if (document.querySelector('.dialog-backdrop') || qteActive()) { setTimeout(() => this.spawnKids(), 2500); return; }
     this.kidsDone = true;
     const kids = this.pr.kids;
     const k1 = this.spawn('kid', tp.x + 7, 66), k2 = this.spawn('kid', tp.x + 8.2, 67);
@@ -2259,9 +2292,26 @@ export class LevelJob {
     const prev = kids.map(k => k.state);
     kids.forEach(k => { k.state = 'qte'; });
     ui.faceSpeaker(a.g);
-    const pool = ['那個鐵餅可以踢嗎？', '我只是要摸一下！', '這個可以帶回家嗎？', '為什麼要放鐵餅在地上？', '我踢很準喔！', '哥哥小氣！'];
+    // 台詞要看他們想碰的是鐵墊還是標尺 (玩家這時通常正在扶尺)
+    const tgt = this.kidTarget();
+    const plate = !!(tgt && tgt.plate);
+    const pool = plate
+      ? ['那個鐵餅可以踢嗎？', '我只是要摸一下！', '為什麼要放一塊鐵在地上？', '我踢很準喔！', '這個可以帶回家嗎？', '哥哥小氣！']
+      : ['那根尺可以推嗎？', '我只是要摸一下！', '尺上面的格子是什麼？', '哥哥你扶著它做什麼？', '借我拿一下啦！', '哥哥小氣！'];
     runQTE({
-      speaker: '小朋友（很盧）', lines: pool.sort(() => Math.random() - 0.5).slice(0, 4), onDone: (ok) => {
+      speaker: '小朋友（很盧）', lines: pool.sort(() => Math.random() - 0.5).slice(0, 4),
+      // 第二天是水準測量：誘餌是望遠鏡和尺上的刻度，不要講衛星
+      responses: {
+        good: [
+          plate ? '「這塊鐵墊被踢到，整條路線就要從頭重測，站遠一點看好不好？」' : '「這根尺被推到，整條路線就要從頭重測，站遠一點看好不好？」',
+          '「等我讀完這一次，讓你們從望遠鏡看一眼好不好？」',
+          '「你們幫我數數看尺上有幾個紅色的『E』，數對了我請你們喝水。」',
+          '「你們叫什麼名字？當我的小幫手，幫我看有沒有車過來。」',
+          '「先退到白線後面，那裡車看得到你們，我再講給你們聽。」',
+        ],
+        bad: ['「走開啦！」', '（不理他們，繼續扶尺）', '「看一下就好，不要太久喔。」', '「你們老師沒教嗎？」', '「好啦好啦，只能摸一下。」', '「再過來我叫警察！」'],
+      },
+      onDone: (ok) => {
         if (!ok) {
           const tp = this.kidTarget();
           kids.forEach((k, i) => {
@@ -2275,10 +2325,26 @@ export class LevelJob {
         }
         kids.forEach(k => { k.state = 'listen'; k.t = 0; });
         ui.faceSpeaker(a.g);
-        ui.showDialog('小朋友', '「好啦……那個到底是什麼？」', [
-          { text: '「這叫鐵墊，標尺要放在上面，動到就要整條重測喔。」', reply: '「喔～好啦，我們不碰。掰掰！」', score: 2, tag: '擋下想踢鐵墊的小朋友，並解釋鐵墊' },
-          { text: '「走開走開。」', reply: '……（小朋友嘟著嘴跑掉了）', score: 1, tag: '擋下想踢鐵墊的小朋友' },
-        ], (o) => { this.fd.addPR(o.score, o.tag); this.kidsGo(); this.relock(); });
+        const what = plate ? '鐵墊' : '標尺';
+        // 回答要是水準測量的東西 (望遠鏡、尺上的 E 字格)，不是 GNSS 那套衛星／面板
+        ui.showDialog('小朋友', plate ? '「好啦……那塊鐵餅到底是什麼？」' : '「好啦……那根尺到底是什麼？」', [
+          plate
+            ? { text: '「這叫鐵墊，標尺要站在上面才不會陷下去，動到就要整條重測喔。」', reply: '「喔～好啦，我們不碰。掰掰！」', score: 2, tag: '擋下想踢鐵墊的小朋友，並解釋鐵墊', id: 'say' }
+            : { text: '「這叫標尺，我扶著它，學長用望遠鏡讀上面的刻度，量兩個點的高低差。動到就要整條重測喔。」', reply: '「哇～那你不能放手欸。好啦我們不碰！」', score: 2, tag: '擋下想推標尺的小朋友，並解釋水準測量', id: 'say' },
+          { text: '「你們幫我數數看尺上有幾個紅色的『E』，數對了等一下讓你們從望遠鏡看一眼。」',
+            reply: '「一、二、三……欸不對啦，重數！」（兩個人蹲在尺前面數得很認真，沒空碰了）', score: 3,
+            tag: `給小朋友一個任務（數標尺刻度），順便把他們的手從${what}移開`, id: 'job' },
+          { text: '「走開走開。」', reply: '……（小朋友嘟著嘴跑掉了）', score: 1, tag: `擋下想碰${what}的小朋友`, id: 'go' },
+        ], (o) => {
+          this.fd.addPR(o.score, o.tag);
+          if (o.id === 'job') {
+            // 給任務：小朋友蹲在尺前面數格子，等你收工前再給他們看望遠鏡
+            tell('把很盧的小朋友變成幫手', '他們蹲在標尺前面數刻度，整段觀測都沒再碰東西');
+            setTimeout(() => ui.toast('小朋友蹲在標尺前面數格子，數得很專心……這下安全了。', 'good', 4000), 600);
+          }
+          this.kidsGo();
+          this.relock();
+        });
       },
     });
   }

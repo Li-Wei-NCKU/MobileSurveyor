@@ -183,7 +183,7 @@ export class SiteEvents {
       const cop = this.actors.find(a => a.kind === 'police');
       if (cop && (cop.state === 'back' || cop.state === 'back2')) { this.remove(cop); this.policeCar.leave(); }
     }
-    if (phase === 'packup' && !this.auntieDone && !this.actors.some(a => a.kind === 'auntie')) setTimeout(() => this.spawnAuntie(), 6000);
+    if (phase === 'packup' && !this.auntieDone && !this.actors.some(a => a.kind === 'auntie')) setTimeout(() => { if (this.rushBusy()) { setTimeout(() => this.spawnAuntie(), 6000); return; } this.spawnAuntie(); }, 6000);
   }
 
   /** 腳架剛架好 */
@@ -281,9 +281,19 @@ export class SiteEvents {
     (a.g.userData.dog ? animateDog : animateWalk)(a.g, a.t, 0);
   }
 
+  /**
+   * 阿黃／小朋友正在衝向腳架：這是最高優先的事件，
+   * 其他人 (阿伯、地主、里長、阿姨、組長來電) 一律先等，不然玩家正要跑過去擋就被對話框卡住。
+   */
+  rushBusy(): boolean {
+    if (qteActive()) return true;
+    if (document.querySelector('.m-dash')) return true;      // 手機版「跑！」連點畫面
+    return this.actors.some(a => ['dog', 'kid'].includes(a.kind) && ['rush', 'follow', 'intro'].includes(a.state));
+  }
+
   private canTalk(): boolean {
     const p = this.h.app.player;
-    return !p.isModalOpen() && !this.h.inTruck();
+    return !p.isModalOpen() && !this.h.inTruck() && !this.rushBusy();
   }
 
   private relock() {
@@ -302,12 +312,16 @@ export class SiteEvents {
     const ph = this.h.phase();
     const g = this.gnss();
 
+    // 阿黃／小朋友衝刺中：其他事件的計時全部暫停，等玩家處理完再繼續
+    const rush = this.rushBusy();
     // 阿伯出場
-    if (this.uncleTimer > 0) { this.uncleTimer -= dt; if (this.uncleTimer <= 0) this.spawn('uncle', 9, 24); }
+    if (this.uncleTimer > 0 && !rush) { this.uncleTimer -= dt; if (this.uncleTimer <= 0) this.spawn('uncle', 9, 24); }
     // 阿伯端茶回來
-    if (this.teaTimer > 0) { this.teaTimer -= dt; if (this.teaTimer <= 0) { const a = this.spawn('uncle', 9, 24); a.state = 'tea'; } }
+    if (this.teaTimer > 0 && !rush) { this.teaTimer -= dt; if (this.teaTimer <= 0) { const a = this.spawn('uncle', 9, 24); a.state = 'tea'; } }
     // 定心定平完成 → 碰腳架事件
-    if (ph === 'observe' && g && g.currentStep >= 2 && !this.bumpDone && !this.actors.some(a => ['kid', 'dog'].includes(a.kind))) {
+    if (ph === 'observe' && g && g.currentStep >= 2 && !this.bumpDone && !this.actors.some(a => ['kid', 'dog'].includes(a.kind))
+        && !document.querySelector('.dialog-backdrop') && !this.h.app.player.isModalOpen()) {
+      // 正在跟人講話／正在操作儀器時先不要放狗，講完再說
       this.bumpDone = true;
       if (this.uncleChoice === 'ignore' && this.actors.some(a => a.kind === 'uncle')) {
         const u = this.actors.find(a => a.kind === 'uncle')!;
@@ -323,8 +337,8 @@ export class SiteEvents {
         this.intro(k1, [k1, k2], '放學小朋友 ×2', '好奇心　MAX', '「那是什麼？可以摸嗎？」', () => { k1.state = 'rush'; k2.state = 'follow'; k1.t = k2.t = 0; });
       }
     }
-    // 量完天線高 → 地主 / 里長
-    if (ph === 'observe' && g && g.currentStep >= 3 && !this.ownerDone) {
+    // 量完天線高 → 地主 / 里長 (阿黃／小朋友還在衝就先不要來)
+    if (ph === 'observe' && g && g.currentStep >= 3 && !this.ownerDone && !rush) {
       this.ownerDone = true;
       this.spawn(this.uncleChoice === 'lie' ? 'chief' : 'owner', -7, 9);
     }
@@ -335,13 +349,13 @@ export class SiteEvents {
       t.rotation.z += (this.tiltTarget - t.rotation.z) * Math.min(1, dt * 8);
     }
     // 組長來電
-    if (this.callTimer > 0 && this.h.inTruck()) {
+    if (this.callTimer > 0 && this.h.inTruck() && !rush) {
       this.callTimer -= dt;
       if (this.callTimer <= 0) this.ring();
     }
 
     // 警察
-    if (this.policeTimer > 0) {
+    if (this.policeTimer > 0 && !rush) {
       this.policeTimer -= dt;
       if (this.policeTimer <= 0) {
         const sm = this.h.app.sceneManager;
@@ -938,7 +952,19 @@ export class SiteEvents {
     const pool = ['可是我想看嘛！', '一下下就好～拜託～', '那我可以按那個按鈕嗎？', '為什麼不行？為什麼？為什麼？', '我媽說我可以！', '哥哥小氣！'];
     const lines = pool.sort(() => Math.random() - 0.5).slice(0, 4);
     runQTE({
-      speaker: '放學的小朋友（很盧）', lines, onDone: (ok) => {
+      speaker: '放學的小朋友（很盧）', lines,
+      // 第一天是 GNSS：可以拿衛星、手簿螢幕當誘餌
+      responses: {
+        good: [
+          '「這台很貴，碰壞了哥哥要賠一年薪水，站這邊看就好。」',
+          '「等我量完，讓你們從螢幕看現在收到幾顆衛星好不好？」',
+          '「這個不能摸，但你們可以幫我數天上有幾架飛機。」',
+          '「你們叫什麼名字？當我的小幫手，幫我看有沒有人靠近。」',
+          '「來，站到三腳架外面一步，我告訴你這是在量什麼。」',
+        ],
+        bad: ['「走開啦！」', '（不理他們，繼續看手簿）', '「看一下就好，不要太久喔。」', '「你們老師沒教嗎？」', '「好啦好啦，只能摸一下。」', '「再過來我叫警察！」'],
+      },
+      onDone: (ok) => {
         if (!ok) {
           // 被鑽過去了：繼續往腳架衝，往前多跑一步；一下子內不會再觸發
           const tp = this.tripod();
@@ -967,6 +993,8 @@ export class SiteEvents {
       ui.faceSpeaker(a.g);
       ui.showDialog('放學的小朋友', '哥哥你在做什麼？那是相機嗎？可以拍我嗎？', [
         { text: '這是衛星定位的儀器，在量這個點的位置。很貴，不能碰喔！', reply: '哇～好酷！那我不碰。掰掰！', score: 2, tag: '跟小朋友解釋儀器，小朋友沒碰' },
+        { text: '「你們幫我數數看天上有幾架飛機飛過，等一下讓你們看手簿上現在收到幾顆衛星。」',
+          reply: '「真的喔！一架、兩架……」（兩個人仰著頭數天空，手都放下來了）', score: 3, tag: '給小朋友一個任務，把他們的手從腳架移開' },
         { text: '走開走開，不要在這裡玩。', reply: '……（小朋友嘟著嘴跑掉了）', score: 0, tag: '把小朋友趕走' },
       ], (opt) => { this.h.addPR(opt.score, opt.tag); this.actors.filter(x => x.kind === 'kid').forEach(k => { k.state = 'leave'; k.t = 0; }); this.relock(); });
     }
