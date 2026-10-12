@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three';
 import type { GameApp, AnyObj } from '../field/legacy';
-import type { FieldDay } from '../field/fieldDay';
+import { PHASE_STEP, type FieldDay } from '../field/fieldDay';
 import type { FollowCamera } from './camera';
 import { openAudioPanel } from '../field/sound';
 import { sheet, closeSheet } from './sheet';
@@ -38,7 +38,7 @@ export class MobileHud {
       <div class="m-top">
         <button type="button" class="m-hint"><span class="m-hint-no"></span><span class="m-hint-text">…</span></button>
         <div class="m-top-btns">
-          <div class="m-compass" aria-label="指北針"><div class="m-compass-dial"><b class="n">北</b><b class="e">東</b><b class="s">南</b><b class="w">西</b></div><i></i></div>
+          <div class="m-compass" aria-label="指北針"><div class="m-compass-dial"><i class="nd"></i><b class="n">北</b><b class="e">東</b><b class="s">南</b><b class="w">西</b></div><i></i></div>
           <button type="button" data-a="save" aria-label="存檔">💾</button>
           <button type="button" data-a="audio" aria-label="聲音">🔊</button>
         </div>
@@ -120,7 +120,9 @@ export class MobileHud {
     // 提示列
     const tip = document.getElementById('mission-tip-text')?.textContent || '';
     const actLi = document.querySelector('#mission-task-list .task-item.active');
-    const no = actLi ? (actLi.querySelector('.task-no')?.textContent || '') : '';
+    // 編號用「今天的第幾階段」(整備→開車→現場→觀測→收工→回公司)，
+    // 不要用各清單自己的序號，不然現場 4 進到觀測又跳回 2，看起來像倒退
+    const no = String(PHASE_STEP[fd.phase] ?? '');
     const txt = actLi ? (actLi.querySelector('.task-text')?.textContent || '') : tip;
     (this.hint.querySelector('.m-hint-no') as HTMLElement).textContent = no;
     (this.hint.querySelector('.m-hint-text') as HTMLElement).textContent = txt;

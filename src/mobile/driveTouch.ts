@@ -63,11 +63,12 @@ export class DriveTouch {
     if (on !== this.shown) {
       this.shown = on;
       this.root.classList.toggle('show', on);
+      document.body.classList.toggle('m-driving', on);   // 開車時收起水準手簿等面板
       this.hud.override = on ? [] : null;
       if (!on) { this.player.axes.steer = 0; this.player.axes.throttle = 0; this.player.axes.brake = false; this.knob.style.transform = ''; }
     }
   }
-  hide() { this.shown = false; this.root.classList.remove('show'); this.hud.override = null; }
+  hide() { this.shown = false; this.root.classList.remove('show'); document.body.classList.remove('m-driving'); this.hud.override = null; }
 
   /** 收音機：電源、上一台 / 下一台、電台清單 (重用 fieldDay 的按鍵處理) */
   private radioSheet() {

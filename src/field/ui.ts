@@ -39,6 +39,10 @@ export function toast(text: string, kind: 'info' | 'warn' | 'bad' | 'good' = 'in
     toastBox = el('div', 'toast-box');
     document.body.appendChild(toastBox);
   }
+  // 同一句話還掛在畫面上就不要再疊一張；最多同時 3 張 (手機螢幕小，疊多了會蓋住面板)
+  const live = [...toastBox.children] as HTMLElement[];
+  if (live.some(e => !e.classList.contains('out') && e.textContent === text)) return;
+  while (live.length >= 3) { live.shift()!.remove(); }
   const t = el('div', `toast toast-${kind}`, text);
   toastBox.appendChild(t);
   // 有人在講話的提示：配上說話聲
@@ -215,6 +219,8 @@ export interface TrunkViewOpts {
   grid: TrunkGrid;
   /** 放入模式時手上的設備；null = 取出模式 */
   item: ItemId | null;
+  /** 取出模式：任務指引現在要的那件 (手機版會標出來) */
+  want?: ItemId | null;
   onPlace?: (col: number, row: number, layer: number, rot: boolean) => void;
   onTake?: (p: Placed) => void;
   onClose?: () => void;

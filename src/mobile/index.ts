@@ -100,7 +100,9 @@ import { installDashQte } from './dashQte';
   const origUpdate = field.update.bind(field);
   field.update = (dt: number) => {
     origUpdate(dt);
-    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack && !document.body.classList.contains('scope-active');
+    // 望遠鏡、佈標／RTK 工作台、手機取景：鏡頭就在人偶身上或旁邊，人偶會擋住畫面
+    const hideMe = ['scope-active', 'gcp-bench', 'phone-cam'].some(c => document.body.classList.contains(c));
+    player.avatar.visible = app.currentLevelObj === field && !field.inTruck && field.phase !== 'done' && !cam.rack && !hideMe;
     input.update(dt);
     guide.update(dt);
     // 靠近正在架的儀器就把鏡頭拉近

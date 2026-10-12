@@ -1248,6 +1248,10 @@ export class LevelJob {
       if (db > 30) return `離 ${b.name} 太遠了（${db.toFixed(0)} m）`;
       const hit = this.spotBlocked(q.x, q.z);
       if (hit) return `這裡架不下去（${hit}擋著）`;
+      // 離建議位置 (藍圈) 還很遠就先講一聲，不然走到一半誤觸就架在爛位置
+      const r0 = this.reloc || this.s1;
+      const dBlue = Math.hypot(q.x - r0.x, q.z - r0.z);
+      if (dBlue > 6) return `在這裡架站（離建議的藍圈還有 ${dBlue.toFixed(0)} m）`;
       return `在這裡架站（後視 ${b.name} ${db.toFixed(1)} m）`;
     }
     const st = this.cur;
@@ -1685,8 +1689,14 @@ export class LevelJob {
     const miss = avail.length ? avail[Math.floor(Math.random() * avail.length)] : null;
     this.asstForgot = miss;
     let list = need.filter(it => it !== miss);
-    if (Math.random() < 0.45) { const ex: ItemId[] = ['paint', 'prism', 'hammer', 'gnss', 'tribrach']; list.push(ex[Math.floor(Math.random() * ex.length)]); } // 順便多搬一件
-    list = list.filter(it => !fd.grid.placed.some(p => p.item === it) && fd.carrying !== it && fd.yardItemPos(it)).sort(() => Math.random() - 0.5);
+    if (Math.random() < 0.3) { const ex: ItemId[] = ['paint', 'prism', 'hammer', 'gnss', 'tribrach']; list.push(ex[Math.floor(Math.random() * ex.length)]); } // 順便多搬一件
+    // 照「離車近的先搬」排，少走冤枉路 (手機版乾等很久很煩)
+    const tk = fd.truck.pos;
+    list = list.filter(it => !fd.grid.placed.some(p => p.item === it) && fd.carrying !== it && fd.yardItemPos(it))
+      .sort((a1, b1) => {
+        const pa = fd.yardItemPos(a1)!, pb = fd.yardItemPos(b1)!;
+        return Math.hypot(pa.x - tk.x, pa.z - tk.z) - Math.hypot(pb.x - tk.x, pb.z - tk.z);
+      });
     this.asstLoading = true;
     const a = this.asst;
     const done = () => {
@@ -1701,11 +1711,11 @@ export class LevelJob {
       if (!pos) { step(i + 1); return; }
       const t0 = fd.truck.toWorld(-3.4, 0, 0.9);
       const d = V(t0.x - pos.x, 0, t0.z - pos.z).normalize();
-      this.goTo(a, pos.x + d.x * 0.8, pos.z + d.z * 0.8, 3.2, () => {
+      this.goTo(a, pos.x + d.x * 0.8, pos.z + d.z * 0.8, 6.2, () => {
         if (!fd.takeGroundItem(it, pos, 0.6)) { step(i + 1); return; }
         this.setHandVis(it);
         const t = fd.truck.toWorld(-3.4, 0, 0.9);
-        this.goTo(a, t.x, t.z, 3.2, () => {
+        this.goTo(a, t.x, t.z, 6.2, () => {
           this.setHandVis(null);
           if (!fd.autoLoad(it)) fd.spawnGround(it, V(t.x, this.sm.heightAt(t.x, t.z + 0.6), t.z + 0.6), 0);
           sfx.thud();
@@ -1725,7 +1735,16 @@ export class LevelJob {
       { id: 'trust', text: `「沒關係，學弟${asstName()}我相信你。」`, reply: `「謝謝學長！」（學弟${asstName()}看起來很開心）`, score: 0, tag: '' },
     ], (o) => {
       a.state = 'idle';
-      if (o.id === 'check') { this.asstChecked = true; (fd as AnyObj).openUnload?.(); }
+      if (o.id === 'check') {
+        this.asstChecked = true;
+        // 自己對過清單就該知道結果，不能只看學弟說「都在後斗」
+        const miss = fd.packList().filter(x => !x.loaded && !x.inHand);
+        setTimeout(() => {
+          if (miss.length) ui.toast(`你自己對了一次清單：後斗少了${miss.map(x => x.name).join('、')}。`, 'warn', 5600);
+          else ui.toast('你自己對了一次清單：今天要用的都在後斗。', 'good', 3600);
+        }, 500);
+        (fd as AnyObj).openUnload?.();
+      }
       else this.relock();
     });
   }

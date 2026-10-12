@@ -290,12 +290,18 @@ class BenchMenu {
       }
     }, 9000);
 
-    const lock = () => {
+    const normalBtns = () => m.setButtons([{ id: 'lock', text: '鎖定', kind: 'primary' }], (id) => { if (id === 'lock') lock(); });
+    const lock = (force = false) => {
       const okAll = g.isLeveled && (np || g.isCentered);   // 只定平的場合 (水準儀) 不看對點
-      if (!okAll && !warned) {
+      if (!okAll && !force) {
         warned = true;
         const what = !np && !g.isCentered && !g.isLeveled ? '對心和氣泡都' : !np && !g.isCentered ? '對心' : '氣泡';
-        ui.toast(`${what}還沒進圈。確定要這樣鎖定，再按一次「鎖定」。`, 'warn', 3200);
+        ui.toast(`${what}還沒進圈。`, 'warn', 2600);
+        // 手機上連點兩下很容易，所以第二顆按鈕換位置、換說法，不會誤觸
+        m.setButtons([
+          { id: 'back', text: '繼續調', kind: 'primary' },
+          { id: 'force', text: `${what}沒進圈也要鎖定`, kind: 'danger', sub: '誤差會直接進成果' },
+        ], (id) => { if (id === 'force') lock(true); else normalBtns(); });
         return;
       }
       clearInterval(timer);
@@ -323,8 +329,8 @@ class BenchMenu {
       lines: ['用手指<b>拖畫面</b>，把鋼捲尺的一端對到<b>標石頂</b>。',
         '另一端對到儀器側面的<b>量高缺口</b>。',
         '<b>兩指可以放大</b>，刻度看清楚一點再讀。',
-        '讀好之後按<b>「記錄」</b>。'],
-      short: '拖畫面對準標石頂和量高缺口，兩指放大看刻度，再按「記錄」。',
+        '把讀到的公尺數<b>打進下面的格子</b>（估讀到小數點後四位，例如 1.2345），再按<b>「記錄」</b>。'],
+      short: '拖畫面對準刻度，把讀數打進格子裡，再按「記錄」。',
       onStart: () => this.tapeGo(g),
     });
   }
@@ -377,7 +383,7 @@ class BenchMenu {
       const shown = L + zeroBias + topBias; // 玩家實際會在捲尺上看到的值
       m.setTitle('量天線斜高', '第 3 步：讀紅線壓到的刻度，估讀到 0.1 mm');
       m.setPanel(`<canvas class="m-tape-cv" width="340" height="240"></canvas>
-        <label class="m-input">斜高 <input type="text" inputmode="decimal" autocomplete="off" placeholder="1.xxxx"> m</label>
+        <label class="m-input">斜高 <input type="text" inputmode="decimal" autocomplete="off" placeholder="點這裡輸入"> m</label>
         <p class="m-fb"></p>`);
       m.setNote('最小刻度 1 mm，長刻度 5 mm，數字是公分。可以用手指上下拖動捲尺。');
       const cv = m.root.querySelector('canvas') as HTMLCanvasElement;
@@ -433,7 +439,7 @@ class BenchMenu {
         { id: 'ok', text: '記錄', kind: 'primary' },
         { id: 'redo', text: '重拉一次', kind: 'ghost' },
       ], (id) => { if (id === 'ok') submit(); else step1(); });
-      setTimeout(() => inp.focus(), 300);
+      // 不自動 focus：手機鍵盤一彈出來會把捲尺整個蓋住，讓玩家讀完再點格子
     };
     step1();
   }

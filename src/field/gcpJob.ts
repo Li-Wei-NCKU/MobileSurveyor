@@ -229,7 +229,9 @@ export class GcpJob {
       return;
     }
     const n = this.gcps.length;
-    const miss = KIT.filter(it => !this.kit.has(it));
+    // 自己手上拿著、或放在腳邊的也算「有」，不然拿了噴漆提示還一直叫你去拿噴漆
+    const pp = fd.app.player.position;
+    const miss = KIT.filter(it => !this.have(it, pp.x, pp.z));
     const done = this.gcps.map(g => `${g.name}${g.rtk ? '·RTK' : ''}${g.photos.close ? '·近' : ''}${g.photos.wide.length ? `·遠${g.photos.wide.length}` : ''}`).join('　');
     const txt = this.asstLays
       ? `${done}\n剩下的點交給學弟${asstName()}了。點「外業地圖」，在地圖上點一下就指定下一個點的位置（紅框內、避開樹冠和農路）。${this.asstJob ? `　學弟正在佈 ${this.asstJob.name}……` : n >= 4 ? `　夠了就跟學弟說收工。` : ''}`
@@ -483,8 +485,9 @@ export class GcpJob {
     if (this.homeAim()) return '在這裡架起降點、放無人機';
     const q = this.layAim();
     if (!q) return this.fd.carrying && this.on && !this.fd.inTruck ? `放下${ITEMS[this.fd.carrying].name}` : null;
+    // 太靠近已經佈好的標：不給動作鈕 (否定句當大按鈕很怪)，改由指引提醒
     const near = this.gcps.find(g => Math.hypot(g.x - q.x, g.z - q.z) < 3);
-    if (near) return `這裡太靠近 ${near.name}`;
+    if (near) return this.fd.carrying ? `放下${ITEMS[this.fd.carrying].name}` : null;
     return `在這裡佈設 GCP-0${this.nextNo}`;
   }
 
@@ -555,10 +558,15 @@ export class GcpJob {
       sfx.pickup();
       const n = this.gcps.length;
       ui.toast(`${name} 佈設完成。`, 'good', 2600);
-      setTimeout(() => {
-        ui.toast(`${name} 佈好了！接下來這個點要做兩件事：① 對著標用 RTK 測坐標　② 用「手機拍照」拍近照 1 張＋遠照 2 張。`, 'info', 7000);
-        ui.thought('（工單要四角＋中央，每個點都要測坐標、拍照。）', 5200);
-      }, 1200);
+      // 第一點講清楚流程，之後只提醒一行 (不然每佈一點就疊一大段字)
+      if (n <= 1) {
+        setTimeout(() => {
+          ui.toast(`${name} 佈好了！接下來這個點要做兩件事：① 對著標用 RTK 測坐標　② 用「手機拍照」拍近照 1 張＋遠照 2 張。`, 'info', 7000);
+          ui.thought('（工單要四角＋中央，每個點都要測坐標、拍照。）', 5200);
+        }, 1200);
+      } else {
+        setTimeout(() => ui.toast(`${name}：記得測 RTK＋拍照。`, 'info', 2600), 1200);
+      }
     }
     this.refreshHint();
   }
@@ -812,7 +820,12 @@ export class GcpJob {
       else if (roll < 0.8) { const ex: ItemId[] = ['prism', 'tripod', 'cones', 'staff', 'tribrach']; list.push(ex[Math.floor(Math.random() * ex.length)]); }
     }
     list = list.filter(it => !fd.grid.has(it) && fd.carrying !== it && fd.yardItemPos(it));
-    if (!this.checklist) list.sort(() => Math.random() - 0.5);
+    // 照離車近的先搬，少走冤枉路 (手機版乾等很久很煩)
+    const tkp = fd.truck.pos;
+    list.sort((a1, b1) => {
+      const pa = fd.yardItemPos(a1)!, pb = fd.yardItemPos(b1)!;
+      return Math.hypot(pa.x - tkp.x, pa.z - tkp.z) - Math.hypot(pb.x - tkp.x, pb.z - tkp.z);
+    });
     this.loading = true;
     this.showClipboard(this.checklist);
     const a = this.asst;
@@ -827,7 +840,7 @@ export class GcpJob {
       if (j >= back.length) { step(0); return; }
       const it = back[j];
       const t = fd.truck.toWorld(-3.4, 0, 0.9);
-      this.goto(t.x, t.z, 3.2, () => {
+      this.goto(t.x, t.z, 6.2, () => {
         if (!fd.npcTakeFromTrunk(it)) { unload(j + 1); return; }
         this.setHandVis(it);
         sfx.pickup();
@@ -835,7 +848,7 @@ export class GcpJob {
         const sp = fd.shelfPos(it);
         if (!sp) { this.setHandVis(null); fd.autoLoad(it); unload(j + 1); return; }
         const d = V(sp.x - t.x, 0, sp.z - t.z).normalize();
-        this.goto(sp.x - d.x * 0.8, sp.z - d.z * 0.8, 3.2, () => {
+        this.goto(sp.x - d.x * 0.8, sp.z - d.z * 0.8, 6.2, () => {
           this.setHandVis(null);
           if (!fd.npcShelve(it)) fd.autoLoad(it);
           sfx.thud();
@@ -851,11 +864,11 @@ export class GcpJob {
       if (!pos) { step(i + 1); return; }
       const t0 = fd.truck.toWorld(-3.4, 0, 0.9);
       const d = V(t0.x - pos.x, 0, t0.z - pos.z).normalize();
-      this.goto(pos.x + d.x * 0.8, pos.z + d.z * 0.8, 3.2, () => {
+      this.goto(pos.x + d.x * 0.8, pos.z + d.z * 0.8, 6.2, () => {
         if (!fd.takeGroundItem(it, pos, 0.6)) { step(i + 1); return; }
         this.setHandVis(it);
         const t = fd.truck.toWorld(-3.4, 0, 0.9);
-        this.goto(t.x, t.z, 3.2, () => {
+        this.goto(t.x, t.z, 6.2, () => {
           this.setHandVis(null);
           if (!fd.autoLoad(it)) fd.spawnGround(it, V(t.x, this.sm.heightAt(t.x, t.z + 0.6), t.z + 0.6), 0);
           sfx.thud();
@@ -887,7 +900,15 @@ export class GcpJob {
     ], (o) => {
       a.state = 'yard';
       this.showClipboard(false);
-      if (o.id === 'check') { this.asstChecked = true; fd.openUnload(); }
+      if (o.id === 'check') {
+        this.asstChecked = true;
+        const miss = fd.packList().filter(x => !x.loaded && !x.inHand);
+        setTimeout(() => {
+          if (miss.length) ui.toast(`你自己對了一次清單：後斗少了${miss.map(x => x.name).join('、')}。`, 'warn', 5600);
+          else ui.toast('你自己對了一次清單：今天要用的都在後斗。', 'good', 3600);
+        }, 500);
+        fd.openUnload();
+      }
       else this.relock();
     });
   }
@@ -1501,7 +1522,15 @@ export class GcpJob {
     if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name} 的坐標`, reach: 1.0 };
     const noPhoto = this.gcps.find(g => !g.photos.close || g.photos.wide.length < 2);
     if (noPhoto) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, label: `拍 ${noPhoto.name} 的點位照片（近 1 ＋ 遠 2）`, reach: 1.2 };
-    if (this.gcps.length < 4) return null;             // 位置要自己挑
+    // 位置要自己挑，但手機版沒有準心，不給指引會完全不知道要幹嘛
+    if (this.gcps.length < 4) {
+      const c = toWorld(AREA_C.x, AREA_C.z);
+      const here = inArea(p.x, p.z, -4);
+      const spots = this.gcps.length ? '（四角＋中央各一個）' : '';
+      return here
+        ? { x: p.x, z: p.z, label: `點一下地面，在那裡佈下一個標${spots}`, reach: 99 }
+        : { x: c.x, z: c.z, label: '走進紅框航測範圍裡，再點地面佈標', reach: 6 };
+    }
     const a = this.asst?.g;
     if (a) return { x: a.position.x, z: a.position.z, label: '跟學弟說可以收工了', reach: 2.0, obj: a as THREE.Object3D };
     return null;
@@ -1551,10 +1580,11 @@ export class GcpJob {
       this.mapCanvas?.addEventListener('pointerdown', (ev: PointerEvent) => { ev.preventDefault(); ev.stopPropagation(); this.pickOnMap(ev.clientX, ev.clientY); });
     }
     this.hintedTablet = true;
+    document.body.classList.add('gcp-map');
     sfx.pickup();
     this.drawMap();
   }
-  closeMap() { this.map?.remove(); this.map = null; this.mapCanvas = null; }
+  closeMap() { this.map?.remove(); this.map = null; this.mapCanvas = null; document.body.classList.remove('gcp-map'); }
   private drawMap() {
     const list = this.map?.querySelector('.gt-list') as HTMLElement | null;
     if (list) {

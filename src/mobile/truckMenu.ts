@@ -14,6 +14,8 @@ export function installTruckMenu(app: GameApp, field: FieldDay) {
     if (menu) return;
     const fd = field as AnyObj;
     const carrying = field.carrying;
+    // 手上有東西又點車尾：就是要放上後斗，不用再問一次 (手機版少一層)
+    if (carrying && where === 'bed') { fd.openLoader(); return; }
     const n = fd.grid?.placed?.length ?? 0;
     const btns: MenuBtn[] = [];
     const busy = fd.loadingBlock?.() as string | null;

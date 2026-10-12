@@ -265,6 +265,12 @@ class GcpBench {
   }
 
   private setCam(back: number, up: number, fov: number, side = 0, look = V()) {
+    // 直式手機：畫面很窄，1.2 m 的模板會被切掉 → 鏡頭往後拉、視野放寬
+    if (innerHeight > innerWidth) {
+      const k = 1.45;
+      back *= k; up *= k; side *= k;
+      fov = Math.min(70, fov * 1.2);
+    }
     const yaw = this.o.yaw;
     const f = V(-Math.sin(yaw), 0, -Math.cos(yaw));
     const r = V(Math.cos(yaw), 0, -Math.sin(yaw));
@@ -315,8 +321,21 @@ class GcpBench {
     wood(this.fX, () => this.framePath(this.fX), '#c99a62');
     wood(this.mX, () => this.maskPath(this.mX), '#b98a55');
     // 遮板上的手寫字
-    this.mX.save(); this.mX.fillStyle = 'rgba(30,30,30,.55)'; this.mX.font = 'bold 13px "Noto Sans TC",sans-serif'; this.mX.textAlign = 'center';
-    this.mX.fillText('遮板', this.px(0.3), this.px(-0.3)); this.mX.fillText('遮板', this.px(-0.3), this.px(0.3)); this.mX.restore();
+    // 遮板會轉 90°／180°，寫字一定會有一個方向是倒的；改畫方向無關的斜線記號
+    const hatch = (u: number, v: number) => {
+      const c = this.px(0), x0 = this.px(u), y0 = this.px(v), r = Math.abs(this.px(0.22) - c);
+      this.mX.save();
+      this.mX.beginPath();
+      for (let k = -2; k <= 2; k++) {
+        this.mX.moveTo(x0 - r + k * r * 0.4, y0 + r);
+        this.mX.lineTo(x0 + r + k * r * 0.4, y0 - r);
+      }
+      this.mX.strokeStyle = 'rgba(30,30,30,.22)';
+      this.mX.lineWidth = 3;
+      this.mX.stroke();
+      this.mX.restore();
+    };
+    hatch(0.3, -0.3); hatch(-0.3, 0.3);
   }
 
   private sq(x: CanvasRenderingContext2D, u0: number, v0: number, u1: number, v1: number) {

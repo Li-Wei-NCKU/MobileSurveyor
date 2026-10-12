@@ -73,6 +73,8 @@ export class FieldDay {
   private origUpdatePanel: AnyObj = null;
   private time = 0;
   private nav!: Navigator;
+  private navRoute: 'toSite' | 'toLevel' | 'toGcp' | 'return' | 'levelReturn' | 'gcpReturn' | null = null;
+  private lastCarry: ItemId | null = null;
   private radio = new CarRadio();
   private radioHinted = false;
   private radioList = false;
@@ -273,7 +275,8 @@ export class FieldDay {
         sm.floatingArrows.splice(sm.floatingArrows.indexOf(a as THREE.Group), 1);
       }
     });
-    this.nav.setRoute(ph === 'prep' || ph === 'toSite' ? this.J.route : ph === 'packup' || ph === 'return' ? this.J.back : null);
+    this.navRoute = ph === 'prep' || ph === 'toSite' ? this.J.route : ph === 'packup' || ph === 'return' ? this.J.back : null;
+    this.nav.setRoute(this.navRoute);
     if (!['prep', 'toSite', 'packup', 'return'].includes(ph)) ui.setNav(null);
     if (ph === 'prep') (this.sub as AnyObj)?.onPrep?.();
     if (ph === 'toSite') this.destArrow(this.J.park.x, this.J.park.z, '目的地：現場停車處');
@@ -551,8 +554,21 @@ export class FieldDay {
     else { this.lv.update(dt); this.gcp.update(dt); }
     this.updateWater(dt);
 
+    // 手上的東西變了 (拿起 / 放下 / 裝上去)：重算現場提示，不然提示會停在上一步
+    if (this.carrying !== this.lastCarry) {
+      this.lastCarry = this.carrying;
+      if (this.sub && ['site', 'observe', 'packup'].includes(this.phase)) (this.sub as AnyObj).refreshHint?.();
+    }
+
     // 導航 (整備儀器時只在上車後顯示)
     const navRef = this.inTruck ? this.truck.pos : p.position;
+    // 忘了東西要開車回公司拿：現場階段也要有導航 (去程 / 回程自動切)
+    const phNow = this.phase;
+    let wantRoute = phNow === 'prep' || phNow === 'toSite' ? this.J.route : phNow === 'packup' || phNow === 'return' ? this.J.back : null;
+    if (!wantRoute && ['site', 'observe'].includes(phNow) && this.m.forgot.size) {
+      wantRoute = Math.hypot(navRef.x - YARD.x, navRef.z - YARD.z) < 60 ? this.J.route : this.J.back;
+    }
+    if (wantRoute !== this.navRoute) { this.navRoute = wantRoute; this.nav.setRoute(wantRoute); }
     const ns = this.nav.update(dt, navRef.x, navRef.z);
     ui.setNav(ns && (!['prep', 'packup'].includes(this.phase) || this.inTruck) ? ns : null);
 
@@ -797,6 +813,19 @@ export class FieldDay {
   guideTarget(): GuideTarget | null {
     const t = this.guideTargetRaw();
     if (!t || this.inTruck) return t;
+    // 要拿的那件被壓在後斗裡：指引直接說「先搬開誰」，不然打開後斗只看到一個 ✕
+    if (t.item && /後斗/.test(t.label)) {
+      const pl = this.grid.placed.find(q => q.item === t.item);
+      const bl = pl ? this.grid.blockers(pl) : [];
+      if (bl.length) {
+        // 手上已經抓著壓在上面的那件：先放地上，不要又塞回後斗
+        if (this.carrying && bl.some(b => b.item === this.carrying)) {
+          const pp2 = this.app.player.position;
+          return { x: pp2.x, z: pp2.z, label: `把${ITEMS[this.carrying].name}放在旁邊地上（右下角「放下」）`, reach: 99 };
+        }
+        return { ...t, label: `先把${bl.map(b => ITEMS[b.item].name).join('、')}搬下來，才拿得到${ITEMS[t.item].name}` };
+      }
+    }
     // 目標太遠 (而且車就在旁邊)：提醒開車過去，不要用走的
     const p = this.app.player.position;
     const d = Math.hypot(p.x - t.x, p.z - t.z);
@@ -873,7 +902,7 @@ export class FieldDay {
       const sub = this.sub as AnyObj | null;
       const asst = sub?.asst?.g as THREE.Object3D | undefined;
       const atAsst = (label: string) => (asst ? { x: asst.position.x, z: asst.position.z, label, reach: 2.2, obj: asst } : { ...door(), label, reach: 1.3 });
-      if (sub?.asstLoading) return { ...atAsst('等學弟搬完'), obj: undefined, reach: 3.0 };
+      if (sub?.asstLoading) return { ...atAsst('學弟在搬，先點左上角對一次清單'), obj: undefined, reach: 3.0 };
       if (sub?.asstLoaded && !sub?.asstChecked) return { ...door(), label: '學弟說都裝好了，上車出發', reach: 1.3 };
       // 一開始選了「交給學弟」：指引帶你去找他
       if (sub && sub.loadBy === 'asst' && !sub.asstLoaded) return atAsst('跟學弟說，請他去裝車');
@@ -1206,7 +1235,7 @@ export class FieldDay {
   openUnload() {
     if (Math.abs(this.truck.speed) > 0.3) return;
     this.truck.tailTarget = 1;
-    ui.showTrunkView({ grid: this.grid, item: null, onTake: (p) => this.takeFromTrunk(p.uid) });
+    ui.showTrunkView({ grid: this.grid, item: null, want: this.guideTargetRaw()?.item ?? null, onTake: (p) => this.takeFromTrunk(p.uid) });
   }
 
   /** 測試工具：把某件設備從手上 / 地上 / 後斗拿掉 (不管有沒有被壓住) */

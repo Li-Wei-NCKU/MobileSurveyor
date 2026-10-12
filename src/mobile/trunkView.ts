@@ -13,6 +13,8 @@ import * as sfx from '../field/sfx';
 interface Opts {
   grid: TrunkGrid;
   item: ItemId | null;
+  /** 任務指引現在要的那件：標金框，被壓住就直接說要先搬誰 */
+  want?: ItemId | null;
   onPlace?: (col: number, row: number, layer: number, rot: boolean) => void;
   onTake?: (p: Placed) => void;
   onClose?: () => void;
@@ -25,6 +27,7 @@ export function installTrunkView() {
 function open(o: Opts) {
   const grid = o.grid;
   const loading = !!o.item;
+  const want = o.want || null;
   const item = o.item as ItemId;
   let rot = false;
   let hover: { col: number; row: number } | null = null;
@@ -84,9 +87,12 @@ function open(o: Opts) {
     [...grid.placed].sort((a, b) => a.layer - b.layer).forEach(p => {
       const { w, d } = footprint(p.item, p.rot);
       const blockers = loading ? [] : grid.blockers(p);
+      const isWant = !loading && want === p.item;
+      // 被上層壓住的：名字移到左下角，才不會整個被 2F 的卡片蓋掉
+      const under = p.layer === 0 && grid.cells(p).some(([c, r]) => !!grid.at(c, r, 1));
       const b = document.createElement(loading ? 'div' : 'button');
-      b.className = `m-tblock layer-${p.layer}${loading ? '' : blockers.length ? ' blocked' : ' free'}${flash.includes(p) ? ' flash' : ''}`;
-      b.innerHTML = `${itemIcon(p.item, 'm-ico')}<span>${shortName(p.item)}</span>${p.layer > 0 ? '<em class="lv">2F</em>' : ''}${loading ? '' : blockers.length ? '<i class="lock">✕</i>' : '<i class="ok">↑</i>'}`;
+      b.className = `m-tblock layer-${p.layer}${loading ? '' : blockers.length ? ' blocked' : ' free'}${isWant ? ' wanted' : ''}${under ? ' under' : ''}${flash.includes(p) ? ' flash' : ''}`;
+      b.innerHTML = `${itemIcon(p.item, 'm-ico')}<span>${shortName(p.item)}</span>${p.layer > 0 ? '<em class="lv">2F</em>' : ''}${isWant ? '<em class="wt">要拿這件</em>' : ''}${loading ? '' : blockers.length ? '<i class="lock">✕</i>' : '<i class="ok">↑</i>'}`;
       place(b, p.col, p.row, w, d);
       if (loading) b.style.pointerEvents = 'none';
       else (b as HTMLButtonElement).onclick = (e) => {
@@ -119,7 +125,13 @@ function open(o: Opts) {
     bar.innerHTML = '';
     if (!loading) {
       const n = grid.placed.length;
-      if (!flash.length) say(n ? '綠色＝可以直接拿；灰色＝被壓住或擋住，點它會告訴你卡在哪。' : '後斗是空的。');
+      if (!flash.length) {
+        const wp = want ? grid.placed.find(p => p.item === want) : null;
+        const wb = wp ? grid.blockers(wp) : [];
+        if (wp && wb.length) say(`要拿的是 <b>${shortName(wp.item)}</b>，但被 <b>${wb.map(x => shortName(x.item)).join('、')}</b> 壓住了——先把它們拿下來放旁邊。`, 'bad');
+        else if (wp) say(`要拿的是 <b>${shortName(wp.item)}</b>（金色框），點它就拿出來。`, 'ok');
+        else say(n ? '綠色＝可以直接拿；灰色＝被壓住或擋住，點它會告訴你卡在哪。' : '後斗是空的。');
+      }
       return;
     }
     const prev = g.querySelector('.m-tprev') as HTMLElement;

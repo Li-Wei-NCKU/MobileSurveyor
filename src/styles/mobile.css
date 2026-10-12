@@ -580,3 +580,43 @@ body:has(.level-book) .m-bar-side { bottom: calc(var(--sab) + var(--m-bar-h) + 2
 .pv-rec.ok { background: #15803d !important; color: #fff !important; }
 .pv-frame.ok .pv-c { border-color: #4ade80 !important; }
 .pv-frame.ok .pv-cross { background: #4ade80 !important; }
+
+/* ==========================================================================
+   m1.19：試玩回饋修正
+   ========================================================================== */
+
+/* 10 外業地圖打開時，通知不要蓋在地圖上 */
+body.gcp-map .toast-box, body.gcp-map .thought { display: none !important; }
+
+/* 11+12 小遊戲／拍照／地圖進行中：收起任務列、指北針、水分條，說明卡才不會被壓到 */
+body.bench-active .m-top,
+body.phone-cam .m-top,
+body.uav-flying .m-top,
+body.gcp-map .m-top { opacity: 0; pointer-events: none; }
+body.bench-active .field-hud,
+body.phone-cam .field-hud { display: none !important; }
+body.phone-cam .big-guide, body.bench-active .big-guide { top: calc(var(--sat) + 56px); font-size: 15px; line-height: 1.5; max-width: calc(100vw - 24px); }
+
+/* 13 開車時把水準手簿收起來 (會蓋到油門) */
+body.m-driving .level-book, body.m-driving #level-book { display: none !important; }
+
+/* 14 指北針：固定一根指北的紅針，不再整盤轉字 */
+.m-compass-dial b.e, .m-compass-dial b.s, .m-compass-dial b.w { display: none; }
+.m-compass-dial .nd { position: absolute; left: 50%; bottom: 50%; width: 0; height: 0; margin-left: -4px;
+  border: 4px solid transparent; border-bottom: 11px solid #ff6b6b; }
+.m-compass-dial b.n { font-size: 9px; transform: translate(-50%,-50%) rotate(var(--a)) translateY(-16px) rotate(calc(-1 * var(--a) - var(--r))); }
+
+/* 15 RTK 手簿：窄螢幕不要把專有名詞拆成兩行，扶桿說明挪到上緣 */
+.rs-top { font-size: 10px; gap: 6px; }
+.rs-top span, .rs-net, .rs-grid span, .rs-grid b, .rs-rec-t { white-space: nowrap; }
+.rs-grid { grid-template-columns: auto 1fr; gap: 2px 8px; }
+.rh-pad span { position: absolute; left: 0; right: 0; top: 10px; padding: 0 10px; font-size: 13px; }
+.rh-pad .rh-pad-x { opacity: .55; }
+
+/* 16 後斗：被上層壓住的那件，名字挪到左下角露出來 */
+.m-tblock.under span { position: absolute; left: 4px; bottom: 2px; max-width: 58%; font-size: 10px; text-align: left; }
+.m-tblock.under .m-ico { transform: translateY(-6%) scale(.8); }
+/* 1 指引要拿的那件：金框 */
+.m-tblock.wanted { border-color: #a07400 !important; box-shadow: 0 0 0 3px rgba(255,210,63,.75), 0 4px 10px rgba(0,0,0,.25); opacity: 1; filter: none; }
+.m-tblock.wanted .wt { position: absolute; top: 2px; left: 3px; font: 800 9px var(--font-ui); font-style: normal;
+  color: #3b2a00; background: var(--survey-yellow); border-radius: 4px; padding: 1px 4px; }
