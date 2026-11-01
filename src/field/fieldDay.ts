@@ -290,11 +290,28 @@ export class FieldDay {
     a.visible = true;
   }
 
+  /** 某件設備算不算「帶到了」：手上、後斗、現場地上，或正在用 (學弟拿著、已經立好、已經擺出去) */
+  itemHere(it: ItemId): boolean {
+    const S = this.J.site;
+    if (this.carrying === it || this.extraCarry === it || this.grid.has(it)) return true;
+    if (this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r)) return true;
+    return !!(this.sub as AnyObj | null)?.itemInUse?.(it);
+  }
+
+  /**
+   * 「忘了帶」清單的收尾：東西到了、或已經在用、或公司也沒有了 (例如交通錐已經擺出去)，就把它劃掉。
+   * 沒有這一步，指引會在公司和現場之間互指 (現場說回去拿、公司說東西拿到了) 永遠出不來。
+   */
+  private auditForgot() {
+    if (!this.m.forgot.size) return;
+    [...this.m.forgot].forEach(it => {
+      if (this.itemHere(it) || !this.yardItemPos(it)) this.m.forgot.delete(it);
+    });
+  }
+
   /** 到現場先清點一次必帶設備：少了什麼當場就知道，指引才會叫你開車回公司拿 */
   private checkRequired() {
-    const S = this.J.site;
-    const here = (it: ItemId) => this.carrying === it || this.extraCarry === it || this.grid.has(it)
-      || this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
+    const here = (it: ItemId) => this.itemHere(it);
     const miss = this.J.required.filter(it => !here(it) && !this.m.forgot.has(it));
     if (!miss.length) return;
     miss.forEach(it => this.m.forgot.add(it));
@@ -427,7 +444,7 @@ export class FieldDay {
     this.m.gnssScore = typeof data.score === 'number' ? data.score : 80;
     const gn = this.app.levelsMap.gnss;
     if (gn?.nameWrong) { this.m.gnssScore = Math.max(0, this.m.gnssScore - 10); this.m.gnssNotes.push(`手簿點名打成 ${gn.nameWrong}`); }
-    if (gn?.htypeWrong) this.m.gnssNotes.push('天線高型別選錯（斜高輸成垂直高）');
+    if (gn?.htypeWrong) this.m.gnssNotes.push('天線高類型選錯（量的是斜高，卻填成垂直高）');
     if (gn?.tapeZero && gn.tapeZero !== 'center') this.m.gnssNotes.push(gn.tapeZero === 'edge' ? '捲尺零點壓在標石邊緣' : '捲尺零點壓在地面');
     if (gn?.tapeTop && gn.tapeTop !== 'notch') this.m.gnssNotes.push(gn.tapeTop === 'top' ? '捲尺拉到天線頂而不是量高缺口' : '捲尺拉到底盤外緣而不是量高缺口');
     if (document.exitPointerLock) document.exitPointerLock();
@@ -533,6 +550,8 @@ export class FieldDay {
       p.noSprint = heavy;
       this.collidePlayer();
     }
+
+    this.auditForgot();
 
     // 階段推進
     const tp = this.truck.pos;
@@ -811,10 +830,15 @@ export class FieldDay {
   // ---------- 手機版任務指引 ----------
   /** 下一步要去哪、做什麼；手機版用來畫目標圈與「前往」提示 */
   guideTarget(): GuideTarget | null {
+    // 阿黃衝過來 / 小朋友鬧 / QTE 進行中：唯一該做的事是畫面上那顆急按鈕，
+    // 這時候還顯示「拿起外業工具袋」只會讓玩家一直點指引卻沒反應
+    // 只看畫面上有沒有那種「現在只能做這件事」的急畫面 (連點跑、限時對話)。
+    // 用狀態旗標判斷的話，旗標沒清掉就會讓指引永遠消失，寧可保守一點
+    if (document.querySelector('.m-dash, .m-qte')) return null;
     const t = this.guideTargetRaw();
     if (!t || this.inTruck) return t;
     // 要拿的那件被壓在後斗裡：指引直接說「先搬開誰」，不然打開後斗只看到一個 ✕
-    if (t.item && /後斗/.test(t.label)) {
+    if (t.item && /後斗|拿下來/.test(t.label)) {
       const pl = this.grid.placed.find(q => q.item === t.item);
       const bl = pl ? this.grid.blockers(pl) : [];
       if (bl.length) {
@@ -878,10 +902,7 @@ export class FieldDay {
 
     // 東西忘在公司：指引開車回去拿 (m.forgot 是遊戲自己記下來的)
     if (['site', 'observe'].includes(this.phase) && this.m.forgot.size) {
-      const S = this.J.site;
-      const here = (it: ItemId) => this.carrying === it || this.extraCarry === it || this.grid.has(it)
-        || this.ground.some(g => g.item === it && Math.hypot(g.obj.position.x - S.x, g.obj.position.z - S.z) < S.r);
-      const left = [...this.m.forgot].filter(it => !here(it));
+      const left = [...this.m.forgot].filter(it => !this.itemHere(it) && this.yardItemPos(it));
       const want = left[0];
       const more = left.length > 1 ? `（還有 ${left.length - 1} 件）` : '';
       const pp = this.app.player.position;
@@ -904,21 +925,27 @@ export class FieldDay {
           const back = this.shelfTarget(this.carrying);
           if (back) return back;
         }
+        // 為了挖出學弟多搬的那件才搬出來的：放旁邊地上。
+        // (放回後斗又會壓住它，指引就會跟自己打架，永遠出不來)
+        const ex0 = sub?.asstExtra as ItemId | undefined;
+        const exPl = ex0 ? this.grid.placed.find(q => q.item === ex0) : null;
+        const blockedByHand = exPl ? this.grid.blockers(exPl).length === 0 : false;   // 已經挖出來了就不用再放地上
+        if (ex0 && sub?.asstChecked && ex0 !== this.carrying && exPl && !blockedByHand) {
+          const pp3 = this.app.player.position;
+          return { x: pp3.x, z: pp3.z, reach: 99, label: `把${nm(this.carrying)}放在旁邊地上（右下角「放下」），才拿得到${nm(ex0)}` };
+        }
         return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
       }
       const asst = sub?.asst?.g as THREE.Object3D | undefined;
       const atAsst = (label: string) => (asst ? { x: asst.position.x, z: asst.position.z, label, reach: 2.2, obj: asst } : { ...door(), label, reach: 1.3 });
-      if (sub?.asstLoading) return { ...atAsst('學弟在搬，先點左上角對一次清單'), obj: undefined, reach: 3.0 };
-      if (sub?.asstLoaded && !sub?.asstChecked) return { ...door(), label: '學弟說都裝好了，上車出發', reach: 1.3 };
+      // 學弟正在搬：這是「等」的狀態，點指引直接開手簿對清單 (走到他旁邊沒東西可按)
+      if (sub?.asstLoading) return { ...atAsst('等學弟搬完（點這裡對一次清單）'), obj: undefined, reach: 3.0 };
+      // 學弟搬完了但還沒對清單：指引帶你去找他對一次 (他少搬 / 多搬的就在這裡抓出來)
+      if (sub?.asstLoaded && !sub?.asstChecked) return atAsst('先跟學弟對一次設備清單');
       // 一開始選了「交給學弟」：指引帶你去找他
       if (sub && sub.loadBy === 'asst' && !sub.asstLoaded) return atAsst('跟學弟說，請他去裝車');
-      // 還沒裝車的必帶設備：指到它現在放的架子
-      for (const it of this.J.required) {
-        if (this.grid.has(it)) continue;
-        const g = this.ground.find(x => x.item === it);
-        if (g) return { x: g.obj.position.x, z: g.obj.position.z - 2.4, label: `到器材架拿${nm(it)}`, reach: 1.1, obj: g.obj };
-      }
-      // 學弟多搬的那件：自己檢查過之後，指引帶你把它放回架上
+      // 先把學弟多搬的那件弄掉，再去補少的。
+      // (順序反了會變成：補一件 → 又把多的壓住 → 挖出來 → 指引叫你放回後斗，無限循環)
       const ex = sub?.asstExtra as ItemId | undefined;
       if (ex && sub?.asstChecked) {
         if (this.carrying === ex) return this.shelfTarget(ex) || { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
@@ -926,11 +953,24 @@ export class FieldDay {
         const gx = this.ground.find(x => x.item === ex);
         if (gx && !this.onShelf(gx.uid)) return { x: gx.obj.position.x, z: gx.obj.position.z, label: `把${nm(ex)}撿起來放回架上`, reach: 1.3, obj: gx.obj, item: ex };
       }
+      // 還沒裝車的必帶設備：指到它現在放的架子 (或掉在地上的位置)
+      for (const it of this.J.required) {
+        if (this.grid.has(it)) continue;
+        const g = this.ground.find(x => x.item === it);
+        if (g) {
+          const onRack = this.onShelf(g.uid);
+          return { x: g.obj.position.x, z: g.obj.position.z - (onRack ? 2.4 : 0), reach: onRack ? 1.1 : 1.3,
+            label: onRack ? `到器材架拿${nm(it)}` : `把${nm(it)}搬回後斗`, obj: g.obj };
+        }
+      }
       return { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
     }
     if (this.phase === 'toSite') return { ...door(), label: '上車出發', reach: 1.3 };
     if (this.phase === 'return') {
       if (this.carrying) return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+      // 已經停回公司了：下一步是器材室的電腦 (以前指引還在叫你「上車開回公司」)
+      const pc = (this.sub as AnyObj | null)?.pcObj?.() as THREE.Object3D | undefined;
+      if (pc) return { x: pc.position.x, z: pc.position.z + 1.4, label: '走到器材室的電腦，匯入照片跑空三', reach: 1.8, obj: pc };
       return { ...door(), label: '上車開回公司', reach: 1.3 };
     }
     if (this.phase === 'packup') {
@@ -967,7 +1007,11 @@ export class FieldDay {
       if (!this.tribrachOn) return fetch('tribrach') || { ...mon, label: '把基座裝上腳架', reach: 1.6 };
       if (!this.receiverOn) return fetch('gnss') || { ...mon, label: '裝上 GNSS 接收儀', reach: 1.6 };
       if (gnss?.currentStep >= 2 && !this.toolbagOn) return fetch('toolbag') || { ...mon, label: '拿外業工具袋來量天線高', reach: 1.6 };
-      return { ...mon, label: '回到儀器旁繼續作業', reach: 1.6 };
+      // 講清楚下一步是什麼，不要只說「回到儀器旁」(玩家不知道要開手簿還是量斜高)
+      const stepLabel = gnss?.slantHeightMeasured ? '點儀器打開手簿，開始靜態觀測'
+        : (gnss?.currentStep ?? 0) >= 2 ? '點儀器，用鋼捲尺量天線斜高'
+          : '回到儀器旁繼續作業';
+      return { ...mon, label: stepLabel, reach: 1.6 };
     }
     // 第二、三天：由各自的工作給指引
     const sub = this.sub as AnyObj | null;
@@ -1262,7 +1306,8 @@ export class FieldDay {
   openUnload() {
     if (Math.abs(this.truck.speed) > 0.3) return;
     this.truck.tailTarget = 1;
-    ui.showTrunkView({ grid: this.grid, item: null, want: this.guideTargetRaw()?.item ?? null, onTake: (p) => this.takeFromTrunk(p.uid) });
+    ui.showTrunkView({ grid: this.grid, item: null, want: this.guideTargetRaw()?.item ?? null,
+      onTake: (p) => this.takeFromTrunk(p.uid), onUnstack: (uid) => this.unstackTrunk(uid) });
   }
 
   /** 測試工具：把某件設備從手上 / 地上 / 後斗拿掉 (不管有沒有被壓住) */
@@ -1287,6 +1332,25 @@ export class FieldDay {
     if (spot) spot.uid = this.spawnGround(item, spot.pos, spot.rotY);
   }
 
+  /** 一次把壓在上面的那幾件搬到車尾地上 (手機後斗畫面的「幫我搬到地上」用) */
+  unstackTrunk(uid: number) {
+    const pl = this.grid.placed.find(p => p.uid === uid);
+    if (!pl) return;
+    const block = this.grid.blockers(pl);
+    if (!block.length) return;
+    const t = this.truck.toWorld(-4.4, 0, 0);
+    block.forEach((b, k) => {
+      const bm = this.trunkMeshes.get(b.uid);
+      this.grid.remove(b);
+      if (bm) { this.truck.bedItems.remove(bm); this.unregister(bm); this.trunkMeshes.delete(b.uid); }
+      const bx = t.x + (k % 3) * 0.8 - 0.8, bz = t.z + Math.floor(k / 3) * 0.8;
+      this.spawnGround(b.item, new THREE.Vector3(bx, this.app.sceneManager.heightAt(bx, bz), bz), Math.random() * 3);
+    });
+    sfx.thud();
+    ui.toast(`${block.map(b => ITEMS[b.item].name).join('、')}放在車尾地上了。收工前記得搬回去。`, 'info', 3400);
+    this.openUnload();
+  }
+
   private takeFromTrunk(uid: number) {
     const pl = this.grid.placed.find(p => p.uid === uid);
     if (!pl) return;
@@ -1294,7 +1358,9 @@ export class FieldDay {
     const block = this.grid.blockers(pl);
     if (block.length) {
       sfx.error();
-      ui.toast(`${ITEMS[pl.item].name}被${block.map(b => ITEMS[b.item].name).join('、')}${block.some(b => b.layer > pl.layer) ? '壓住' : '擋住'}了，先把它們搬開。`, 'warn', 3200);
+      const names = block.map(b => ITEMS[b.item].name).join('、');
+      const how = block.some(b => b.layer > pl.layer) ? '壓住' : '擋住';
+      ui.toast(`${ITEMS[pl.item].name}被${names}${how}了，先把它們搬開。`, 'warn', 3200);
       return;
     }
     this.grid.remove(pl);

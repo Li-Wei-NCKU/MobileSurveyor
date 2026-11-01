@@ -21,6 +21,10 @@ import { tell, whatIf } from './story';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const ALT = 30;
+/** 一顆電池能飛的秒數 (22 分鐘) */
+export const BATT_SEC = 22 * 60;
+/** 規格：GSD ≤ 1.2 cm */
+export const GSD_MAX = 1.2;
 /** 照片涵蓋範圍 (相對航高)：跨航線寬、沿航線長 */
 const FW = 0.66, FL = 0.5; // 一張照片：航高 × 0.66 (左右) / × 0.5 (前後)
 const SPEED = 12;
@@ -196,7 +200,29 @@ export class UavOps {
   private lastCorners: THREE.Vector3[] = [];
   private planEl: HTMLElement | null = null;
 
+  /** 航高 (m)：30／40／50 可選，GSD 跟著變 (30 m = 1.0 cm) */
+  alt = ALT;
+  /** 電池：每顆 22 分鐘，兩顆 */
+  batteries = 2;
+  /** 自動航線快轉倍率 (老鷹、村民來的時候自動回 1×) */
+  speedMul = 1;
+  /** 電量不夠或下雨提前返航：還沒飛到的航點，換電池後從這裡續飛 */
+  resumeFrom = 0;
+  private lowBatt = false;
+
   constructor(private job: AnyObj) { this.sm = job.fd.app.sceneManager; }
+
+  /** GSD (cm)：30 m 航高 = 1.0 cm */
+  gsd(): number { return this.alt / 30; }
+  /** 預估飛行時間 (秒)：航線長度 / 速度 + 爬升下降 + 每個轉彎 2 秒 */
+  estSec(): number {
+    const st = planStats(this.plan, this.shot, this.alt);
+    const h = this.home ? toLocal(this.home.x, this.home.z) : null;
+    const hop = h && this.plan.length ? Math.hypot(this.plan[0].x - h.x, this.plan[0].z - h.z) + Math.hypot(this.plan[this.plan.length - 1].x - h.x, this.plan[this.plan.length - 1].z - h.z) : 0;
+    return (st.length + hop) / SPEED + this.alt / 6 + this.alt / 3 + Math.max(0, this.plan.length - 1) * 2;
+  }
+  /** 預估用電 (%)：一顆電池 22 分鐘 */
+  estBatt(): number { return this.estSec() / BATT_SEC * 100; }
 
   private emptyLog(): FlightLog { return { homeNearPole: false, compassOk: null, eagle: '', landDist: 0, landSpeed: 0, battery: 100, photos: 0, fwd: 0, side: 0, cover: 0, ortho: null }; }
 
@@ -209,7 +235,8 @@ export class UavOps {
     this.pad = this.drone = null; this.villager = null;
     this.home = null;
     this.stage = 'none';
-    this.plan = []; this.shot = 6;
+    this.plan = []; this.shot = 4;
+    this.alt = ALT; this.batteries = 2; this.speedMul = 1; this.resumeFrom = 0; this.lowBatt = false;
     this.grid = new Uint8Array(GNX * GNZ);
     this.log = this.emptyLog();
   }
@@ -260,6 +287,7 @@ export class UavOps {
   // ================================================================
   preflight() {
     if (this.job.ev.raining) { sfx.error(); ui.toast('下雨不能飛，等雨停。', 'warn', 2600); return; }
+    if (this.job.fd.app.player.isModalOpen() || document.querySelector('.dialog-backdrop, .dialog')) return; // 有人在講話，先講完
     this.openPlanner();
   }
 
@@ -270,7 +298,7 @@ export class UavOps {
     const d = document.createElement('div');
     d.className = 'modal-backdrop show field-modal uav-plan';
     d.innerHTML = `<div class="up-pad">
-      <div class="up-head"><b>航線規劃</b><span>航高 ${ALT} m　一張照片涵蓋 ${Math.round(FW * ALT)} × ${Math.round(FL * ALT)} m（左右 × 前後）</span></div>
+      <div class="up-head"><b>航線規劃</b><span class="up-head-sub"></span></div>
       <div class="up-body">
         <canvas width="560" height="470"></canvas>
         <div class="up-side">
@@ -288,15 +316,20 @@ export class UavOps {
               <span class="g">航線間距（綠）</span> → 決定<b>側向重疊</b>：間距越小越高<br>
               <span class="b">拍照間距（藍點）</span> → 決定<b>前後重疊</b>：間距越小越高</div>
           </div>
-          <div class="up-need">需求：前後重疊 ≥ ${NEED_FWD * 100}%　側向重疊 ≥ ${NEED_SIDE * 100}%</div>
+          <div class="up-need">需求：GSD ≤ ${GSD_MAX} cm　前後重疊 ≥ ${NEED_FWD * 100}%　側向重疊 ≥ ${NEED_SIDE * 100}%</div>
+          <div class="up-alt">航高
+            <button data-alt="30">30 m</button><button data-alt="40">40 m</button><button data-alt="50">50 m</button>
+            <b class="s-gsd"></b></div>
           <div class="up-stats2">
             <div class="up-stat"><span>前後重疊 <small>（只看拍照間距）</small></span><b class="s-fwd">—</b></div>
             <div class="up-stat"><span>側向重疊 <small>（只看航線間距）</small></span><b class="s-side">—</b></div>
             <div class="up-stat"><span>範圍覆蓋</span><b class="s-cover">—</b></div>
-            <div class="up-stat"><span>航線長度</span><b class="s-len">—</b></div>
+            <div class="up-stat"><span>航線長度／照片</span><b class="s-len">—</b></div>
+            <div class="up-stat"><span>預估時間／電量</span><b class="s-time">—</b></div>
           </div>
-          <div class="up-shot">拍照間距 <button data-a="minus">−</button><b class="s-shot"></b><button data-a="plus">＋</button></div>
+          <div class="up-shot">拍照間距 <input type="range" class="s-shot-range" min="1" max="12" step="0.5"><b class="s-shot"></b></div>
           <div class="up-btns">
+            <button data-a="auto" class="up-auto">自動排 S 型航線</button>
             <button data-a="undo">復原</button>
             <button data-a="clear">清除</button>
             <button data-a="fly" class="up-fly">起飛${mob ? '' : ' (Enter)'}</button>
@@ -313,7 +346,7 @@ export class UavOps {
       const c = cv.getContext('2d')!;
       map = drawSiteMap(c, cv.width, cv.height, { gcps: this.job.gcps.map((g: AnyObj) => ({ x: g.x, z: g.z, name: g.name })) });
       const m = map!;
-      const st = planStats(this.plan, this.shot);
+      const st = planStats(this.plan, this.shot, this.alt);
       c.fillStyle = 'rgba(56,189,248,.28)';
       for (let gx = 0; gx < GNX; gx++) for (let gz = 0; gz < GNZ; gz++) if (st.grid[gx * GNZ + gz]) {
         const x0 = GX0 + gx * GS, z0 = GZ0 + gz * GS;
@@ -332,12 +365,12 @@ export class UavOps {
       if (hover) {
         const last = this.plan.length ? this.plan[this.plan.length - 1] : h;
         const dir = last && Math.hypot(hover.x - last.x, hover.z - last.z) > 0.5 ? Math.atan2(hover.z - last.z, hover.x - last.x) : 0;
-        const Lh = FL * ALT / 2, Wh = FW * ALT / 2, cc = Math.cos(dir), ss = Math.sin(dir);
+        const Lh = FL * this.alt / 2, Wh = FW * this.alt / 2, cc = Math.cos(dir), ss = Math.sin(dir);
         const q = [[Lh, Wh], [Lh, -Wh], [-Lh, -Wh], [-Lh, Wh]].map(([a, b]) => ({ X: m.px(hover!.x + a * cc - b * ss), Y: m.py(hover!.z + a * ss + b * cc) }));
         c.setLineDash([5, 4]); c.strokeStyle = 'rgba(255,255,255,.95)'; c.lineWidth = 1.5; c.fillStyle = 'rgba(255,255,255,.12)';
         c.beginPath(); q.forEach((o, i) => i ? c.lineTo(o.X, o.Y) : c.moveTo(o.X, o.Y)); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
         c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'bottom';
-        c.fillText(`一張照片 ${Math.round(FW * ALT)}×${Math.round(FL * ALT)} m`, m.px(hover.x), Math.min(...q.map(o => o.Y)) - 3);
+        c.fillText(`一張照片 ${Math.round(FW * this.alt)}×${Math.round(FL * this.alt)} m`, m.px(hover.x), Math.min(...q.map(o => o.Y)) - 3);
       }
       if (h) { c.fillStyle = '#f59e0b'; c.strokeStyle = '#111'; c.lineWidth = 1.5; c.beginPath(); c.arc(m.px(h.x), m.py(h.z), 9, 0, Math.PI * 2); c.fill(); c.stroke(); c.fillStyle = '#111'; c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('H', m.px(h.x), m.py(h.z) + 0.5); }
       const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -345,9 +378,26 @@ export class UavOps {
       set('.s-fwd', pct(st.fwd), st.fwd >= NEED_FWD - 1e-6);
       set('.s-side', st.side === null ? '—（要有兩條以上平行航線）' : pct(Math.max(0, st.side)), st.side === null ? null : st.side >= NEED_SIDE - 1e-6);
       set('.s-cover', this.plan.length > 1 ? pct(st.cover) : '—', this.plan.length > 1 ? st.cover > 0.995 : null);
-      set('.s-len', `${Math.round(st.length)} m`, null);
-      (d.querySelector('.s-shot') as HTMLElement).textContent = `${this.shot.toFixed(1)} m`;
+      const photos = this.plan.length > 1 ? Math.round(st.length / this.shot) : 0;
+      set('.s-len', `${Math.round(st.length)} m／${photos} 張`, null);
+      const sec = this.plan.length > 1 ? this.estSec() : 0, batt = this.plan.length > 1 ? this.estBatt() : 0;
+      set('.s-time', this.plan.length > 1 ? `${Math.floor(sec / 60)} 分 ${Math.round(sec % 60)} 秒／${Math.round(batt)}%` : '—', this.plan.length > 1 ? batt <= 80 : null);
+      const gsd = this.gsd();
+      set('.s-gsd', `GSD ${gsd.toFixed(1)} cm${gsd > GSD_MAX ? '（超規，會被退件）' : ''}`, gsd <= GSD_MAX);
+      (d.querySelector('.up-head-sub') as HTMLElement).textContent = `航高 ${this.alt} m　一張照片涵蓋 ${Math.round(FW * this.alt)} × ${Math.round(FL * this.alt)} m（左右 × 前後）`;
+      d.querySelectorAll<HTMLButtonElement>('.up-alt button').forEach(b => b.classList.toggle('on', +b.dataset.alt! === this.alt));
+      const rng = d.querySelector('.s-shot-range') as HTMLInputElement;
+      if (rng && +rng.value !== this.shot) rng.value = String(this.shot);
+      const shotEl = d.querySelector('.s-shot') as HTMLElement;
+      shotEl.textContent = `${this.shot.toFixed(1)} m`;
+      shotEl.className = `s-shot ${st.fwd >= NEED_FWD - 1e-6 ? 'ok' : 'bad'}`;
     };
+    // 航高按鈕、拍照間距滑桿
+    d.querySelectorAll<HTMLButtonElement>('.up-alt button').forEach(b => {
+      b.onclick = (ev) => { ev.stopPropagation(); this.alt = +b.dataset.alt!; sfx.pickup(); draw(); };
+    });
+    const rngEl = d.querySelector('.s-shot-range') as HTMLInputElement;
+    rngEl.oninput = () => { this.shot = +rngEl.value; draw(); };
     const toLocalPt = (ev: MouseEvent) => {
       const r = cv.getBoundingClientRect();
       const sx = (ev.clientX - r.left) * cv.width / r.width, sy = (ev.clientY - r.top) * cv.height / r.height;
@@ -404,22 +454,23 @@ export class UavOps {
     const act = (a: string) => {
       if (a === 'undo') this.plan.pop();
       if (a === 'clear') this.plan = [];
-      if (a === 'minus') this.shot = Math.max(1, this.shot - 0.5);
-      if (a === 'plus') this.shot = Math.min(16, this.shot + 0.5);
+      if (a === 'auto') { this.standardPlan(); sfx.pickup(); ui.toast('照紅框排了一條 S 型航線。航點可以拖，覺得多的長按刪掉。', 'info', 3500); }
       if (a === 'close') { window.removeEventListener('keydown', onKey, true); this.closePlanner(); this.job.relock(); return; }
       if (a === 'fly') {
         if (this.plan.length < 2) { sfx.error(); ui.toast('至少要點兩個航點。', 'warn', 2000); return; }
+        if (this.estBatt() > 95) { sfx.error(); ui.toast(`這條航線預估要用 ${Math.round(this.estBatt())}% 的電，一顆電池飛不完。飛高一點或縮短航線。`, 'warn', 4200); return; }
         window.removeEventListener('keydown', onKey, true);
         this.closePlanner();
         gameIntro({
           key: 'uavfly',
           title: '起飛',
-          sub: `手動升到 ${ALT} m，之後自動跑航線`,
-          lines: ['<b>按住「升空」</b>一直到高度 30 m，飛機就會自己照航線飛、定距拍照。',
+          sub: `手動升到 ${this.alt} m，之後自動跑航線`,
+          lines: [`<b>按住「升空」</b>一直到高度 ${this.alt} m，飛機就會自己照航線飛、定距拍照。`,
             '左邊的<b>搖桿</b>可以平移飛機（起飛和降落時才需要）。',
             '飛完它會自己飛回起降點上空，這時用<b>搖桿對準</b>、按<b>「下降」</b>降落。',
-            '電量會一直掉，電線桿旁邊指南針可能會怪怪的。'],
-          short: '按住「升空」到 30 m 會自動跑航線；回來後搖桿對準、按「下降」。',
+            '電量會一直掉，剩 20% 會自己返航；電線桿旁邊指南針可能會怪怪的。',
+            '雷雨快來的時候可以按「返航」提前回來，已經拍的照片都留著。'],
+          short: `按住「升空」到 ${this.alt} m 會自動跑航線；回來後搖桿對準、按「下降」。`,
           start: '起飛',
           onStart: () => this.startFlight(),
         });
@@ -463,9 +514,13 @@ export class UavOps {
     this.t = 0;
     this.pos.set(this.home.x, this.home.y + 0.42, this.home.z);
     this.vel.set(0, 0, 0);
-    this.log.battery = 100; this.log.photos = 0; this.log.compassOk = null; this.log.eagle = '';
-    this.grid = new Uint8Array(GNX * GNZ);
-    this.shotGaps = []; this.sinceShot = 0;
+    const resuming = this.resumeFrom > 0;
+    this.log.battery = 100; this.log.compassOk = null;
+    if (!resuming) { this.log.photos = 0; this.log.eagle = ''; this.grid = new Uint8Array(GNX * GNZ); this.shotGaps = []; this.log.seam = false; }
+    else { this.log.seam = true; }
+    this.sinceShot = 0;
+    this.speedMul = 1; this.lowBatt = false;
+    this.batteries = Math.max(0, this.batteries - 1);
     this.drift.set(0, 0, 0); this.driftT = 0;
     this.eagleAt = -1; this.eagleT = -1; this.villagerAt = -1; this.paused = false;
     this.path = this.plan.map(q => { const w = toWorld(q.x, q.z); return V(w.x, 0, w.z); });
@@ -485,7 +540,7 @@ export class UavOps {
     window.addEventListener('keydown', this.onKey, true);
     window.addEventListener('keyup', this.onKey, true);
     sfx.pickup();
-    ui.toast(`按住 Space 起飛，升到 ${ALT} m 後會照航線自動飛。`, 'info', 3500);
+    ui.toast(`按住 Space 起飛，升到 ${this.alt} m 後會照航線自動飛。`, 'info', 3500);
   }
 
   private buildFootprint() {
@@ -559,8 +614,20 @@ export class UavOps {
 
   tick(dt: number) {
     if (this.paused) { this.drawHud(this.pos.y - this.home!.y); return; } // 被叫住時懸停
-    if (this.qte) { this.qteTick(dt); return; } // 閃鳥：只做閃避動作
+    if (this.qte) { this.speedMul = 1; this.qteTick(dt); return; } // 閃鳥：只做閃避動作
+    // 2× 快轉只在自動航線、而且沒人來找的時候
+    if (this.speedMul > 1 && (this.mode !== 'mission' || this.villager || this.eagle)) this.speedMul = 1;
+    dt *= this.speedMul;
     this.t += dt;
+    // 電量：一顆 22 分鐘，爬升比較耗
+    this.log.battery = Math.max(0, this.log.battery - dt / BATT_SEC * 100 * (this.mode === 'takeoff' ? 1.6 : 1));
+    if (this.log.battery <= 20 && this.mode === 'mission' && !this.lowBatt) {
+      this.lowBatt = true;
+      this.resumeFrom = this.pi;
+      this.mode = 'rth';
+      sfx.error();
+      ui.toast(`電量剩 20%，自動返航。還有 ${this.path.length - this.pi} 個航點沒飛${this.batteries > 0 ? '，降落後換電池續飛' : '，已經沒有電池了'}。`, 'warn', 5200);
+    }
     const cam = this.sm.camera as THREE.PerspectiveCamera;
     const home = this.home!;
     const k = this.keys;
@@ -582,8 +649,8 @@ export class UavOps {
         if (off > 9 && this.log.compassOk === null) { this.log.compassOk = false; ui.toast('……差點撞到電線！', 'bad', 3000); }
         if (agl0 > 15) { if (this.log.compassOk === null) this.log.compassOk = true; this.drift.set(0, 0, 0); }
       }
-      if (agl0 > ALT - 1) {
-        this.mode = 'mission'; this.pi = 0;
+      if (agl0 > this.alt - 1) {
+        this.mode = 'mission'; this.pi = this.resumeFrom || 0;
         const ev = this.job.ev;
         this.eagleAt = ev.has('eagle') ? this.t + 5 + Math.random() * 8 : -1;
         this.visits = [];
@@ -594,13 +661,13 @@ export class UavOps {
       }
     } else if (this.mode === 'mission') {
       const tgt = this.path[this.pi];
-      const ty = topAt(this.sm, tgt.x, tgt.z) + ALT;
+      const ty = topAt(this.sm, tgt.x, tgt.z) + this.alt;
       const d = V(tgt.x - this.pos.x, ty - this.pos.y, tgt.z - this.pos.z);
       const dist = Math.hypot(d.x, d.z);
       want.set(d.x, 0, d.z).normalize().multiplyScalar(Math.min(SPEED, dist * 2)); want.y = d.y * 2;
       if (dist < 1.5) {
         this.pi++;
-        if (this.pi >= this.path.length) { this.mode = 'rth'; ui.toast('航線飛完，返航中。', 'info', 2000); }
+        if (this.pi >= this.path.length) { this.mode = 'rth'; this.resumeFrom = 0; ui.toast('航線飛完，返航中。', 'info', 2000); }
       }
       this.sinceShot += Math.hypot(this.vel.x, this.vel.z) * dt;
       if (this.sinceShot >= this.shot) {
@@ -630,7 +697,8 @@ export class UavOps {
       if (dist < 1.2 && Math.abs(d.y) < 1) { this.mode = 'land'; ui.toast('到起降點上空了。WASD 對準、按住 Shift 下降。', 'info', 3500); }
     } else if (this.mode === 'land') {
       want.copy(stick).multiplyScalar(2);
-      want.y = k.down ? -3 : k.up ? 2 : 0;
+      // 離地 3 m 以內自動放慢 (真機的著陸模式)，不然按住下降一定「咚」
+      want.y = k.down ? (agl0 < 3 ? -1.4 : -3) : k.up ? 2 : 0;
       const w = this.job.wind;
       want.x += w.x * 0.15 * Math.sin(this.t * 0.8); want.z += w.z * 0.15 * Math.sin(this.t * 0.8);
     }
@@ -767,14 +835,46 @@ export class UavOps {
     ui.toast(hard ? '咚！降落有點重……' : this.log.landDist < 0.6 ? '漂亮，穩穩停在起降墊上。' : `降落了（偏離起降墊 ${this.log.landDist.toFixed(1)} m）。`, hard ? 'warn' : 'good', 3000);
     this.finishStats();
     this.stopFlight();
+    // 還有航點沒飛 (低電量 / 提前返航)：有電池就換一顆續飛
+    if (this.resumeFrom > 0 && this.resumeFrom < this.path.length && this.batteries > 0 && !this.job.ev.raining) {
+      this.stage = 'ready';
+      setTimeout(() => ui.toast(`換上第 2 顆電池。點一下無人機再起飛，會從第 ${this.resumeFrom + 1} 個航點接著飛（接縫處會有誤差）。`, 'info', 5200), 600);
+      return;
+    }
+    if (this.resumeFrom > 0 && this.resumeFrom < this.path.length) {
+      setTimeout(() => ui.toast(`還有 ${this.path.length - this.resumeFrom} 個航點沒飛到，${this.job.ev.raining ? '雨下來了' : '沒電池了'}……只能用拍到的做。`, 'bad', 4500), 600);
+    }
+    this.resumeFrom = 0;
     this.stage = 'done';
     this.job.onFlightDone();
   }
 
+  /** 提前返航 (雷雨要來、或玩家自己按)：記下續飛點，已拍的照片留著 */
+  returnHome(why = '') {
+    if (this.mode !== 'mission') return false;
+    this.resumeFrom = this.pi;
+    this.mode = 'rth';
+    this.speedMul = 1;
+    ui.toast(`${why ? why + '，' : ''}返航中。已經拍的 ${this.log.photos} 張照片都留著。`, 'warn', 3600);
+    return true;
+  }
+
+  /** 雨下到飛機上：這趟的照片全毀，強制落地 */
+  rainedOut() {
+    if (this.mode === 'off') return;
+    sfx.error();
+    ui.toast('雨打在鏡頭上……這趟拍的照片全部糊掉了。緊急降落！', 'bad', 5200);
+    this.log.photos = 0; this.grid = new Uint8Array(GNX * GNZ); this.shotGaps = [];
+    this.resumeFrom = 0;
+    this.pos.y = topAt(this.sm, this.pos.x, this.pos.z) + 0.42;
+    this.mode = 'land';
+    this.touchdown();
+  }
+
   private finishStats() {
     const gaps = this.shotGaps.length ? this.shotGaps.reduce((a, b) => a + b, 0) / this.shotGaps.length : this.shot;
-    this.log.fwd = 1 - gaps / (FL * ALT);
-    this.log.side = sideOverlap(this.plan) ?? 0;
+    this.log.fwd = 1 - gaps / (FL * this.alt);
+    this.log.side = sideOverlap(this.plan, this.alt) ?? 0;
     this.log.cover = coverOf(this.grid);
   }
 
@@ -805,10 +905,33 @@ export class UavOps {
     const keysT = ui.fixText(keys);
     const home = this.home!;
     const off = Math.hypot(this.pos.x - home.x, this.pos.z - home.z);
-    this.hud.innerHTML = `
-      <div class="uh-top"><b>${modeName[this.mode]}</b><span>高度 ${agl.toFixed(1)} m</span><span>照片 ${this.log.photos}</span><span>覆蓋 ${Math.round(coverOf(this.grid) * 100)}%</span>${this.mode === 'land' ? `<span>離起降墊 ${off.toFixed(1)} m</span>` : ''}</div>
+    const batt = Math.round(this.log.battery);
+    const storm = this.job.ev.stormText ? this.job.ev.stormText() : null;
+    const mission = this.mode === 'mission';
+    // 按鈕只建一次 (每幀重畫 innerHTML 會把正在按的按鈕換掉，點不到)
+    let dyn = this.hud.querySelector('.uh-dyn') as HTMLElement | null;
+    if (!dyn) {
+      this.hud.innerHTML = '<div class="uh-dyn"></div><div class="uh-btns"><button type="button" data-u="ff">2× 快轉</button><button type="button" data-u="rth">返航</button></div>';
+      dyn = this.hud.querySelector('.uh-dyn') as HTMLElement;
+      this.hud.querySelectorAll<HTMLButtonElement>('button[data-u]').forEach(b => {
+        b.onpointerdown = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          if (b.dataset.u === 'ff') this.speedMul = this.speedMul > 1 ? 1 : 2;
+          if (b.dataset.u === 'rth') this.returnHome('提前返航');
+        };
+      });
+    }
+    dyn.innerHTML = `
+      <div class="uh-top"><b>${modeName[this.mode]}</b><span>高度 ${agl.toFixed(1)} m</span><span class="${batt <= 25 ? 'bad' : ''}">電量 ${batt}%</span><span>照片 ${this.log.photos}</span><span>覆蓋 ${Math.round(coverOf(this.grid) * 100)}%</span>${this.mode === 'land' ? `<span>離起降墊 ${off.toFixed(1)} m</span>` : ''}${storm ? `<span class="bad">${storm}</span>` : ''}</div>
       ${this.warn ? `<div class="uh-warn">${this.warn}</div>` : ''}
       <div class="uh-keys">${keysT}</div>`;
+    const bar = this.hud.querySelector('.uh-btns') as HTMLElement;
+    bar.style.display = mission ? '' : 'none';
+    const ff = bar.querySelector('button[data-u=ff]') as HTMLButtonElement;
+    const ffTxt = this.speedMul > 1 ? '1×' : '2× 快轉';
+    if (ff.textContent !== ffTxt) ff.textContent = ffTxt;
+    ff.classList.toggle('on', this.speedMul > 1);
   }
 
   /** 某個世界座標點有沒有被照片拍到 */
@@ -1004,9 +1127,25 @@ export class UavOps {
     (this.job.gcps as AnyObj[]).forEach(g => {
       const q = toPx(g.x, g.z);
       const vis = this.job.gcpVisible(g);
-      ctx.strokeStyle = vis.ok ? '#22c55e' : '#ef4444'; ctx.lineWidth = 2.5;
-      ctx.strokeRect(q.px - 11, q.py - 11, 22, 22);
-      const label = `${g.name}${vis.ok ? '' : '：' + vis.why}`;
+      const isCheck = this.job.checkName === g.name;
+      ctx.strokeStyle = vis.ok ? (isCheck ? '#38bdf8' : '#22c55e') : '#ef4444'; ctx.lineWidth = 2.5;
+      if (isCheck) { ctx.beginPath(); ctx.arc(q.px, q.py, 13, 0, Math.PI * 2); ctx.stroke(); }
+      else ctx.strokeRect(q.px - 11, q.py - 11, 22, 22);
+      // 殘差向量：哪個點歪、往哪歪一眼看得出來 (1 cm = 5 px，最多 60 px)
+      const r = this.job.residual ? this.job.residual(g) : null;
+      if (r !== null && vis.ok) {
+        let seed = 0; for (const ch of g.name) seed = (seed * 31 + ch.charCodeAt(0)) % 9973;
+        const ang = (seed / 9973) * Math.PI * 2;
+        const len = Math.min(60, r * 5);
+        const ex = q.px + Math.cos(ang) * len, ey = q.py + Math.sin(ang) * len;
+        ctx.strokeStyle = r > 10 ? '#f87171' : '#facc15'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(q.px, q.py); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - Math.cos(ang - 0.5) * 8, ey - Math.sin(ang - 0.5) * 8);
+        ctx.lineTo(ex - Math.cos(ang + 0.5) * 8, ey - Math.sin(ang + 0.5) * 8);
+        ctx.closePath(); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+      }
+      const label = `${g.name}${isCheck ? '（檢核）' : ''}${vis.ok ? (r !== null ? `　${r.toFixed(1)} cm` : '') : '：' + vis.why}`;
       ctx.font = 'bold 12px sans-serif';
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(q.px + 13, q.py - 20, ctx.measureText(label).width + 8, 18);
       ctx.fillStyle = vis.ok ? '#bbf7d0' : '#fecaca'; ctx.textAlign = 'left';
@@ -1029,12 +1168,12 @@ export class UavOps {
   /** 標準航線 (測試用)：剛好符合重疊需求的蛇行航線 */
   standardPlan() {
     this.plan = [];
-    const sp = FW * ALT * (1 - NEED_SIDE);
+    const sp = FW * this.alt * (1 - NEED_SIDE);
     let i = 0;
     for (let z = AREA.z0 - 2; z <= AREA.z1 + sp; z += sp, i++) {
       this.plan.push({ x: i % 2 ? AREA.x1 + 8 : AREA.x0 - 8, z }, { x: i % 2 ? AREA.x0 - 8 : AREA.x1 + 8, z });
     }
-    this.shot = FL * ALT * (1 - NEED_FWD);
+    this.shot = Math.floor(FL * this.alt * (1 - NEED_FWD) * 2) / 2;
   }
 
   /** 測試工具：用現在的航線 (沒有就用標準航線) 直接飛完 */

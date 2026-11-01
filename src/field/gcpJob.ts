@@ -20,11 +20,11 @@ import { buildItemModel } from './itemModels';
 import { JOBS } from './jobs';
 import { rtkBench, type RtkResult } from './rtkBench';
 import { GcpEvents, DRY_TIME } from './gcpEvents';
-import { UavOps, NEED_FWD, NEED_SIDE, ALT } from './uav';
+import { UavOps, NEED_FWD, NEED_SIDE, GSD_MAX } from './uav';
 import { gcpBench, buildGcpMarker, type GcpWorkResult, type PaintStock } from './gcpBench';
 import {
   buildGcpSite, type SiteBuild, surfAt, topAt, inArea, canopyAt, buildingDist, drawSiteMap,
-  AREA, AREA_C, HARD, CROP, SURF_NAME, CROWNS, BAMBOO, toLocal, toWorld, mapToLocal, refPoints, type Surf,
+  AREA, AREA_C, GCP_PARK, HARD, CROP, SURF_NAME, CROWNS, BAMBOO, toLocal, toWorld, mapToLocal, refPoints, type Surf,
 } from './gcpSite';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -84,6 +84,10 @@ export class GcpJob {
   private askedWhere = false;
   /** 第一個點做完之後：剩下的交給學弟，玩家只在外業地圖上指位置 */
   asstLays = false;
+  /** 連位置都交給學弟自己挑 (他會挑到坑裡：農路上、榕樹下、田裡…) */
+  asstAuto = false;
+  private autoT = -1;
+  private autoUsed = new Set<string>();
   private asstOffered = false;
   /** 學弟目前要去佈的點 */
   private asstJob: { x: number; z: number; name: string; t: number; walking: boolean } | null = null;
@@ -150,7 +154,7 @@ export class GcpJob {
     this.office = false; if (this.pc) this.ensureInteractive(this.pc, false);
     this.uav?.reset();
     this.kit.clear();
-    this.paint = { white: 130, black: 90 };
+    this.paint = { white: 230, black: 170 };   // 五個標認真噴也夠 (一個標約白 40／黑 30)
     this.nails = { left: 7 };
     this.loadMode = ''; this.forgotAt = null; this.fetchBack = false; this.hammerOut = ''; this.asstExtra = null;
     const a = Math.random() * Math.PI * 2, s = 1.4 + Math.random() * 1.8;
@@ -164,6 +168,8 @@ export class GcpJob {
     if (this.phone) this.togglePhone();
     this.loading = this.loaded = this.checklist = false;
     this.loadBy = ''; this.asstChecked = false; this.prepHinted = false;
+    this.asstAuto = false; this.autoT = -1; this.autoUsed = new Set(); this.autoStop = null; this.autoLearned = false;
+    this.checkName = null;
     this.setHandVis(null);
     this.showClipboard(false);
     // 第三天的學弟就是第二天那位
@@ -225,7 +231,7 @@ export class GcpJob {
     if (this.laid) {
       const st = this.uav.stage;
       const txt = st === 'setup' ? '下午航拍：從後斗拿無人機箱，找個空曠的地方對著地面按 E 架起降點。'
-        : st === 'ready' ? `對著無人機按 E，先在平板上點航點畫航線（前後重疊 ≥ ${NEED_FWD * 100}%、側向重疊 ≥ ${NEED_SIDE * 100}%），再起飛。Space 上升，${ALT} m 後自動跑航線；回來後 WASD 對準、Shift 降落。`
+        : st === 'ready' ? `對著無人機按 E，先在平板上畫航線（可以按「自動排 S 型」再微調；GSD ≤ ${GSD_MAX} cm、前後重疊 ≥ ${NEED_FWD * 100}%、側向重疊 ≥ ${NEED_SIDE * 100}%），再起飛。Space 上升到航高後自動跑航線；電量剩 20% 會自己回來換電池；回來後 WASD 對準、Shift 降落。`
           : st === 'done' ? '航拍完成。對著無人機按 E 收起來，東西都裝回車上再回公司。' : '';
       if (txt) fd.app.updateMissionPanel(fd.title, fd.J.tasks.map((t: string, i: number) => ({ id: i, text: t })), 5, txt);
       return;
@@ -235,13 +241,15 @@ export class GcpJob {
     const pp = fd.app.player.position;
     const miss = KIT.filter(it => !this.have(it, pp.x, pp.z));
     const done = this.gcps.map(g => `${g.name}${g.rtk ? '·RTK' : ''}${g.photos.close ? '·近' : ''}${g.photos.wide.length ? `·遠${g.photos.wide.length}` : ''}`).join('　');
-    const txt = this.asstLays
+    const txt = this.asstAuto
+      ? `${done}\n位置也交給學弟${asstName()}了。他每次出發前會用對講機喊一聲——覺得位置不對就<b>點他叫住他</b>。${this.asstJob ? `　他正在佈 ${this.asstJob.name}……` : n >= 4 ? '　夠了就跟學弟說收工。' : ''}`
+      : this.asstLays
       ? `${done}\n剩下的點交給學弟${asstName()}了。點「外業地圖」，在地圖上點一下就指定下一個點的位置（紅框內、避開樹冠和農路）。${this.asstJob ? `　學弟正在佈 ${this.asstJob.name}……` : n >= 4 ? `　夠了就跟學弟說收工。` : ''}`
       : n === 0
       ? (miss.length ? `去車尾拿噴漆箱（${miss.filter(i => i !== 'paint').length ? `${miss.filter(i => i !== 'paint').map(i => ITEMS[i].name).join('、')}也要有人拿；` : ''}學弟${asstName()}拿著其他的）。Q：外業地圖（航測範圍）。看著地面按 E 在那裡佈標。`
         : `選一個點，看著地面按 E 開始佈標（模板 → 噴白 → 噴黑 → 敲釘）。Q：外業地圖。`)
       : `${done}\n對著標按 E 用 RTK 測坐標；C 手機拍點位照片（近照 1 張、遠照 2 張）。${n >= 4 ? `都好了就跟學弟${asstName()}說收工。` : '工單要四角＋中央，至少 4 點。'}`;
-    fd.panel(n === 0 ? 'site' : 'observe', `${txt}\n材料：白漆 ${Math.round(this.paint.white / 130 * 100)}%　黑漆 ${Math.round(this.paint.black / 90 * 100)}%　鋼釘 ${this.nails.left} 根`);
+    fd.panel(n === 0 ? 'site' : 'observe', `${txt}\n材料：白漆 ${Math.round(this.paint.white / 230 * 100)}%　黑漆 ${Math.round(this.paint.black / 170 * 100)}%　鋼釘 ${this.nails.left} 根`);
   }
 
   onEnterTruck() {
@@ -294,6 +302,13 @@ export class GcpJob {
     const hideAsst = (gcpBench.active || !!this.phone) && a.state !== 'hidden';
     if (a.state !== 'hidden') a.g.visible = !hideAsst;
     if (hideAsst) { this.ev.update(dt); if (this.map) this.drawMap(); return; }
+    // 連位置都交給他：每隔一下他自己挑一個點出發 (有時候會挑到坑裡)
+    if (this.asstAuto && this.asstLays && !this.asstJob && !this.laid && !this.benchBusy()
+        && !this.fd.app.player.isModalOpen() && !document.querySelector('.dialog-backdrop')
+        && this.gcps.length < MAX_GCP && ['site', 'observe'].includes(this.fd.phase)) {
+      this.autoT -= dt;
+      if (this.autoT <= 0) { this.autoT = 6; this.asstPickOwn(); }
+    }
     // 學弟自己去佈點：走過去 → 佈 → 回報
     const job = this.asstJob;
     if (job) {
@@ -322,7 +337,8 @@ export class GcpJob {
         }
         case 'reportLoad': {
           // 搬完跑來跟學長回報
-          if (this.fd.phase !== 'prep' || this.fd.inTruck) { a.state = 'yard'; break; }
+          if (this.fd.phase !== 'prep') { a.state = 'yard'; break; }
+          if (this.fd.inTruck) { this.face(p.x, p.z); break; }   // 上車了就等他下車再問
           const d = Math.hypot(p.x - a.g.position.x, p.z - a.g.position.z);
           if (d > 2.2) { this.walk(p.x, p.z, 2.6, dt); break; }
           this.face(p.x, p.z);
@@ -474,6 +490,31 @@ export class GcpJob {
   }
 
   /** 拿著無人機箱對地面：架起降點 */
+  /**
+   * 建議的起降點：離車 6 m 以上、硬地、沒有樹冠、不壓到標。
+   * 手機版沒有準心，拿著無人機箱在那裡亂找很痛苦，所以指引直接給一個會通過檢查的位置。
+   */
+  homeSuggest(): { x: number; z: number } | null {
+    const fd = this.fd;
+    const tk = fd.truck.pos;
+    const base = GCP_PARK;
+    let best: { x: number; z: number; d: number } | null = null;
+    for (let r = 7; r <= 22; r += 2.5) {
+      for (let a = 0; a < 360; a += 15) {
+        const x = base.x + Math.cos(a * Math.PI / 180) * r;
+        const z = base.z + Math.sin(a * Math.PI / 180) * r;
+        if (Math.hypot(x - tk.x, z - tk.z) < 6.5) continue;
+        if (this.gcps.some(g => Math.hypot(g.x - x, g.z - z) < 3.5)) continue;
+        const sp = this.analyze(x, z);
+        if (!sp.ok || sp.soil > 0.35 || sp.canopy) continue;
+        const d = Math.hypot(x - fd.app.player.position.x, z - fd.app.player.position.z);
+        if (!best || d < best.d) best = { x, z, d };
+      }
+      if (best) break;
+    }
+    return best ? { x: best.x, z: best.z } : null;
+  }
+
   private homeAim(): THREE.Vector3 | null {
     const fd = this.fd;
     if (!this.on || fd.inTruck || this.uav.stage !== 'setup' || fd.carrying !== 'drone' || this.benchBusy()) return null;
@@ -508,6 +549,17 @@ export class GcpJob {
     if (this.gcps.some(g => Math.hypot(g.x - q.x, g.z - q.z) < 3)) { sfx.error(); return true; }
     this.tryLay(q.x, q.z);
     return true;
+  }
+
+  /**
+   * 這件設備是不是「正在用」：學弟拿著 (kit)、無人機已經架在起降點、標已經佈下去了。
+   * fieldDay 的「忘了帶」清單用這個判定。
+   */
+  itemInUse(it: ItemId): boolean {
+    if (this.kit.has(it)) return true;
+    if (it === 'drone') return this.uav.stage !== 'none';
+    if (it === 'paint' || it === 'template' || it === 'hammer') return this.gcps.length > 0;
+    return false;
   }
 
   /** 東西在不在手邊：學弟拿著、自己拿著、或放在附近地上 */
@@ -559,7 +611,12 @@ export class GcpJob {
     if (!quiet) {
       sfx.pickup();
       const n = this.gcps.length;
-      ui.toast(`${name} 佈設完成。`, 'good', 2600);
+      // 當場給分數，玩家才知道剛剛那個標噴得好不好 (不用等收工報告)
+      const ps = Math.round(rest.paintScore);
+      const tl = rest.nailTilt;
+      ui.toast(`${name} 佈設完成：噴漆 ${ps} 分（白 ${Math.round(rest.whiteCov * 100)}%／黑 ${Math.round(rest.blackCov * 100)}%`
+        + `${rest.overflow > 0.1 ? `、溢出 ${Math.round(rest.overflow * 100)}%` : ''}）、鋼釘歪 ${tl.toFixed(1)}°。`,
+        ps >= 70 && tl < 3 ? 'good' : 'warn', 4200);
       // 第一點講清楚流程，之後只提醒一行 (不然每佈一點就疊一大段字)
       if (n <= 1) {
         setTimeout(() => {
@@ -589,18 +646,98 @@ export class GcpJob {
     setTimeout(() => {
       if (this.fd.app.player.isModalOpen() || this.benchBusy()) { this.asstOffered = false; return; }
       ui.faceSpeaker(this.asst.g);
-      ui.showDialog(nm, '「學長，我看你佈一個就會了！剩下幾個讓我試試看好不好？<br>你用外業地圖指位置，我過去噴、量坐標、拍照，一條龍。」', [
-        { id: 'yes', text: '「好啊，剩下的你來。我負責挑位置。」', reply: '「收到！學長你開外業地圖點一下，我就過去。」', score: 0, tag: '' },
-        { id: 'no', text: '「不用，我自己做比較快。」', reply: '「好喔……那我幫你拿東西。」', score: 0, tag: '' },
+      ui.showDialog(nm, '「學長，我看你佈一個就會了！剩下的交給我——你用外業地圖指位置，我過去噴、量坐標、拍照，一條龍。<br>還是連位置也我自己挑？」', [
+        { id: 'yes', text: '「我指位置，你去做。」', reply: '「收到！學長你開外業地圖點一下，我就過去。」', score: 0, tag: '' },
+        { id: 'auto', text: '「連位置也你挑，我去車上坐一下。」', reply: '「真的？！那我自己看著辦！學長你放心。」', score: 0, tag: '' },
       ], (o) => {
         this.relock();
-        if (o.id !== 'yes') return;
         this.asstLays = true;
-        ui.toast('點右下角的「外業地圖」，在地圖上點一下就指定下一個點的位置。', 'info', 6000);
+        if (o.id === 'auto') {
+          this.asstAuto = true;
+          this.autoT = 5;
+          ui.toast(`學弟${asstName()}要自己挑位置了。他每次出發前會喊一聲——覺得不對就馬上點他叫住他。`, 'warn', 7000);
+          ui.thought('（他才第三天……位置真的交給他挑沒問題嗎？）', 5200);
+        } else {
+          ui.toast('點右下角的「外業地圖」，在地圖上點一下就指定下一個點的位置。', 'info', 6000);
+        }
         this.refreshHint();
       });
     }, 1400);
   }
+
+  /**
+   * 學弟自己挑下一個點：一半照規矩挑四角／中央，一半挑他覺得「好停好走」的爛位置
+   * (農路上、榕樹下、田裡、菜園)。出發前會喊一聲，玩家點他就能叫住。
+   */
+  private asstPickOwn() {
+    const good: [number, number][] = [[-24, 59.15], [30, 59.15], [-28, 103], [28, 102.5], [-5.5, 85]];
+    const bad: [number, number][] = [[8, 70], [1.2, 88.4], [-20, 75], [25, 75], [15, 105]];
+    const pick = (base: [number, number][]) => {
+      // 每個位置再加上幾個偏移的候選，被玩家否決過的位置他就不會再提 (但附近還可以挑)
+      const list: [number, number][] = base.flatMap(([lx, lz]) =>
+        [[lx, lz], [lx + 5, lz], [lx - 5, lz], [lx, lz + 5], [lx, lz - 5]] as [number, number][]);
+      const ok = list.filter(([lx, lz]) => {
+        if (this.autoUsed.has(`${lx},${lz}`)) return false;
+        const w = toWorld(lx, lz);
+        if (this.gcps.some(g => Math.hypot(g.x - w.x, g.z - w.z) < 3)) return false;
+        return this.analyze(w.x, w.z).ok;
+      });
+      return ok.length ? ok[Math.floor(Math.random() * ok.length)] : null;
+    };
+    // 他自己挑：六成會挑到坑裡 (他覺得「這裡好走、車子開得進來」)
+    const wantBad = Math.random() < (this.autoLearned ? 0.15 : 0.6);
+    const chosen = (wantBad ? pick(bad) || pick(good) : pick(good) || pick(bad));
+    if (!chosen) return;
+    const key = `${chosen[0]},${chosen[1]}`;
+    this.autoUsed.add(key);
+    const w = toWorld(chosen[0], chosen[1]);
+    const spot = this.analyze(w.x, w.z);
+    if (!spot.ok) return;
+    const name = `GCP-0${this.nextNo}`;
+    // 位置好不好不看查表、直接看地面：偏移過的候選也要講對 (農路上、田裡、菜園、榕樹下…)
+    const badWhy = spot.surf === 'lane' || spot.surf === 'drive' ? '農路上'
+      : spot.surf === 'fieldW' || spot.surf === 'fieldE' ? '田裡'
+        : spot.surf === 'veg' ? '菜園'
+          : spot.canopy ? `${spot.canopy}下` : spot.soil > 0.5 ? '軟土上' : '';
+    this.asstJob = { x: spot.x, z: spot.z, name, t: 0, walking: true };
+    this.autoStop = { name, bad: !!badWhy, why: badWhy };
+    sfx.pickup();
+    const near = badWhy ? `${badWhy}那邊` : '那邊空地';
+    ui.toast(`（對講機）學弟${asstName()}：「學長，${name} 我佈在${near}喔！那裡好走。」`, badWhy ? 'warn' : 'info', 5200);
+    this.refreshHint();
+    if (this.map) this.drawMap();
+  }
+  private autoStop: { name: string; bad: boolean; why: string } | null = null;
+  /** 地圖上第一下點的位置 (預覽)，第二下才派人 */
+  private mapPreview: { x: number; z: number } | null = null;
+
+  /** 玩家在他走過去的路上點他：叫住、換位置 */
+  private stopAsstJob(): boolean {
+    const job = this.asstJob;
+    if (!job || !this.asstAuto || !job.walking) return false;
+    const st = this.autoStop;
+    const nm = `學弟${asstName()}`;
+    ui.faceSpeaker(this.asst.g);
+    ui.showDialog(nm, `「${job.name} 我要去佈了，學長怎麼了？」`, [
+      { id: 'stop', text: st?.bad ? `「那裡是${st.why}，不能佈。換一個。」` : '「等等，我自己看一下位置。」',
+        reply: st?.bad ? `「啊……${st.why}不行喔？我記住了。」` : '「好，學長你挑。」', score: st?.bad ? 2 : 0, tag: st?.bad ? `叫住學弟，${st.why}的標沒佈下去` : '' },
+      { id: 'go', text: '「沒事，你去吧。」', reply: '「好！」', score: 0, tag: '' },
+    ], (o) => {
+      this.relock();
+      if (o.id !== 'stop') return;
+      this.asstJob = null;
+      this.autoStop = null;
+      this.asst.state = 'follow';
+      if (o.score) this.fd.addPR(o.score, o.tag);
+      // 被糾正過就學乖：之後自己挑的時候會避開爛位置
+      this.autoLearned = true;
+      ui.toast(`${nm}：「那我再找一個……」`, 'info', 2600);
+      this.autoT = 4;
+      this.refreshHint();
+    });
+    return true;
+  }
+  private autoLearned = false;
 
   /** 在外業地圖上點一個位置：叫學弟去佈 */
   private pickOnMap(cx: number, cy: number) {
@@ -614,6 +751,18 @@ export class GcpJob {
     if (this.gcps.some(g => Math.hypot(g.x - w.x, g.z - w.z) < 3)) { sfx.error(); ui.toast('這裡太靠近已經佈好的點了。', 'warn', 2400); return; }
     const spot = this.analyze(w.x, w.z);
     if (!spot.ok) { sfx.error(); ui.toast(spot.why!, 'warn', 3000); return; }
+    // 第一下先看地況，同一個地方再點一下才真的派他去 (以前點下去他就走，到了才說這裡不行)
+    const pv = this.mapPreview;
+    if (!pv || Math.hypot(pv.x - w.x, pv.z - w.z) > 2.5) {
+      this.mapPreview = { x: w.x, z: w.z };
+      const bad = spot.surf === 'lane' || spot.surf === 'drive' ? '農路上，車會壓到' : spot.surf === 'fieldW' || spot.surf === 'fieldE' ? '田裡，田主會來' : spot.surf === 'veg' ? '菜園裡' : spot.canopy ? `${spot.canopy}下面，RTK 和影像都差` : spot.soil > 0.5 ? '土太軟，鋼釘會晃' : '';
+      const good = !bad ? `${SURF_NAME[spot.surf] || '硬地'}，可以` : '';
+      sfx.pickup();
+      ui.toast(`這裡是${bad || good}${inArea(w.x, w.z, -2) ? '' : '（在紅框外）'}。再點一下同一個地方就派學弟${asstName()}過去。`, bad ? 'warn' : 'info', 3600);
+      this.drawMap();
+      return;
+    }
+    this.mapPreview = null;
     const name = `GCP-0${this.nextNo}`;
     this.asstJob = { x: spot.x, z: spot.z, name, t: 0, walking: true };
     this.closeMap();
@@ -650,9 +799,17 @@ export class GcpJob {
       .sort((m, n) => m.d - n.d).slice(0, 2).map(m => m.r);
     g.photos = { close: 'asst', wide: refs.map(r => ({ img: 'asst', ref: r.name })) };
     this.asstJob = null;
+    this.autoStop = null;
     this.ev.onGcpDone(g);
     const left = MAX_GCP - this.gcps.length;
     ui.toast(`學弟${asstName()}：「${j.name} 好了！標、坐標、照片都做完。」${left > 0 ? `還差 ${left} 個，學長再指位置。` : ''}`, 'good', 4200);
+    // 學弟順便講一句這個點的狀況：玩家選位置的好壞要看得見，不然只能等收工才知道
+    const say: string[] = [];
+    if (spot.canopy) say.push('這個點在樹冠下面，RTK 只收到浮動解');
+    if (spot.soil > 0.5) say.push('土有點軟，鋼釘感覺會晃');
+    if (spot.bld && spot.bld.d < 4) say.push('旁邊有東西遮，衛星訊號差一點');
+    if (!say.length) say.push(q >= 0.9 ? '這個點好噴，漆上得很勻' : this.asstAuto ? '位置我自己挑的，應該可以吧？' : '照學長交代的做了');
+    setTimeout(() => ui.toast(`學弟${asstName()}：「${say.join('，')}。」`, say.length && (spot.canopy || spot.soil > 0.5) ? 'warn' : 'info', 4200), 1600);
     this.refreshHint();
   }
 
@@ -664,6 +821,7 @@ export class GcpJob {
     const ep = this.ev.prompt(hit);
     if (ep) return ep;
     if (hit === this.asst.g) {
+      if (this.asstAuto && this.asstJob?.walking) return `叫住學弟${asstName()}（他要去佈 ${this.asstJob.name}）`;
       const fd = this.fd;
       if (fd.carrying && [...KIT, 'rtk'].includes(fd.carrying) && ['site', 'observe'].includes(fd.phase)) return `把${ITEMS[fd.carrying].name}交給學弟${asstName()}`;
       if (fd.carrying && fd.phase === 'packup') return `把${ITEMS[fd.carrying].name}交給學弟${asstName()}（拿去放後斗）`;
@@ -692,11 +850,14 @@ export class GcpJob {
     const g = this.gcps.find(x => x.obj === obj);
     if (g) { if (g.paw && !g.washed) this.touchUp(g); else this.startRtk(g); return; }
     if (obj !== this.asst.g) return;
+    if (this.stopAsstJob()) return;
     const fd = this.fd;
     const nm = `學弟${asstName()}`;
     if (fd.phase === 'brief') return;
     if (fd.phase === 'prep' || fd.phase === 'toSite') {
       if (fd.phase === 'prep' && !this.loading && !this.loaded) { this.offerLoad(); return; }
+      // 搬完了還沒對清單：直接開清點對話
+      if (fd.phase === 'prep' && this.loaded && !this.asstChecked) { this.asst.state = 'talking'; this.askCheck(); return; }
       ui.toast(this.loading ? `${nm}：「${this.checklist ? '照清單搬中，等我一下！' : '搬東西中，等我一下！'}」` : `${nm}：「東西都好了就出發吧！我坐副駕。」`, 'info', 3000);
       return;
     }
@@ -830,6 +991,9 @@ export class GcpJob {
     // 照離車近的先搬，少走冤枉路 (手機版乾等很久很煩)
     const tkp = fd.truck.pos;
     list.sort((a1, b1) => {
+      // 多搬的那件最後搬 (疊最上層，好拿下來)；到現場第一件要用的噴漆也往後搬
+      const rank = (it: ItemId) => (it === this.asstExtra ? 2 : it === 'paint' ? 1 : 0);
+      if (rank(a1) !== rank(b1)) return rank(a1) - rank(b1);
       const pa = fd.yardItemPos(a1)!, pb = fd.yardItemPos(b1)!;
       return Math.hypot(pa.x - tkp.x, pa.z - tkp.z) - Math.hypot(pb.x - tkp.x, pb.z - tkp.z);
     });
@@ -1131,10 +1295,28 @@ export class GcpJob {
       (window as AnyObj).__lookMode?.(false);   // 手機版：離開第一人稱取景
       return;
     }
+    // 示意圖：左邊近照 (標壓在畫面中間)、右邊遠照 (標小小的，旁邊要有廟或大樹)
+    const art = `<svg viewBox="0 0 300 120" width="100%" aria-hidden="true">
+      <g transform="translate(6,8)">
+        <rect x="0" y="0" width="130" height="86" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1.5"/>
+        <rect x="43" y="22" width="44" height="44" fill="#f4f4ee"/><rect x="43" y="22" width="22" height="22" fill="#16171a"/><rect x="65" y="44" width="22" height="22" fill="#16171a"/>
+        <circle cx="65" cy="44" r="18" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="3 2"/>
+        <text x="65" y="102" fill="#1f2d3d" font-size="11" font-weight="700" text-anchor="middle">近照 1 張：標放正中間，&lt; 4 m</text>
+      </g>
+      <g transform="translate(164,8)">
+        <rect x="0" y="0" width="130" height="86" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1.5"/>
+        <rect x="0" y="52" width="130" height="34" fill="#1e3a2a"/>
+        <rect x="72" y="56" width="12" height="12" fill="#f4f4ee"/><rect x="72" y="56" width="6" height="6" fill="#16171a"/><rect x="78" y="62" width="6" height="6" fill="#16171a"/>
+        <rect x="14" y="30" width="30" height="24" fill="#b45309"/><path d="M10 30 L29 16 L48 30 Z" fill="#dc2626"/>
+        <circle cx="106" cy="30" r="14" fill="#15803d"/><rect x="104" y="42" width="4" height="12" fill="#78350f"/>
+        <text x="29" y="13" fill="#4ade80" font-size="10" font-weight="700" text-anchor="middle">廟 ✓</text>
+        <text x="65" y="102" fill="#1f2d3d" font-size="11" font-weight="700" text-anchor="middle">遠照 2 張：5～40 m，畫面有地物</text>
+      </g></svg>`;
     gameIntro({
       key: 'photo',
       title: '拍點位照片',
       sub: '每個標要近照 1 張、遠照 2 張',
+      art, artWide: true,
       lines: ['<b>拖畫面</b>轉頭取景，右邊的<b>＋／−</b>或<b>兩指</b>可以變焦。',
         '<b>近照</b>：站在標旁邊，把標放在畫面<b>正中間</b>。',
         '<b>遠照</b>：退到 5～40 m，畫面要帶到廟、房子、大樹、電線桿等<b>參考地物</b>。',
@@ -1192,8 +1374,19 @@ export class GcpJob {
         ok = mid && needClose;
         txt = `${g.name}　${d.toFixed(1)} m　${!needClose ? '近照已有' : mid ? '近照 OK，可以拍' : '把標對到畫面中間'}`;
       } else if (d <= 45) {
-        ok = needWide;
-        txt = `${g.name}　${d.toFixed(1)} m　${needWide ? `遠照 ${g.photos.wide.length}／2・畫面要帶到參考地物` : '遠照已有 2 張'}`;
+        // 這一張到底算不算，取景的時候就要看得出來：標有沒有被擋住、框裡有沒有可用的參考地物
+        const blocked = this.photoBlocked(g, d);
+        const used = new Set(g.photos.wide.map(w => w.ref));
+        const inFrame = refPoints().filter(r => {
+          const rq = V(r.x, this.sm.heightAt(r.x, r.z) + r.y, r.z).project(cam);
+          return rq.z < 1 && Math.abs(rq.x) < 0.95 && Math.abs(rq.y) < 0.95;
+        });
+        const fresh = inFrame.find(r => !used.has(r.name)) || inFrame[0];
+        ok = needWide && !blocked && !!fresh;
+        txt = !needWide ? `${g.name}　${d.toFixed(1)} m　遠照已有 2 張`
+          : blocked ? `${g.name}　${d.toFixed(1)} m　標被${blocked}擋住了，換個方向站`
+            : fresh ? `${g.name}　${d.toFixed(1)} m　遠照 ${g.photos.wide.length}／2・參考：${fresh.name} ✓`
+              : `${g.name}　${d.toFixed(1)} m　遠照 ${g.photos.wide.length}／2・畫面裡還沒有參考地物（廟、房子、大樹、電線桿…）`;
       } else {
         txt = `${g.name}　${d.toFixed(0)} m　太遠了，走近一點`;
       }
@@ -1244,6 +1437,19 @@ export class GcpJob {
       return;
     }
     this.refreshHint();
+  }
+
+  /** 取景時：標被什麼擋住了 (回傳擋住的東西，沒擋住就 null) */
+  private photoBlocked(g: Gcp, d: number): string | null {
+    const cam = this.sm.camera as THREE.PerspectiveCamera;
+    const to = V(g.x, g.y + 0.05, g.z);
+    const ray = new THREE.Raycaster(cam.position.clone(), to.clone().sub(cam.position).normalize(), 0.3, d - 0.9);
+    const truck = this.fd.truck.group;
+    if (ray.intersectObject(truck, true).length) return '作業車';
+    const trees = (this.sm.trees as THREE.Object3D[]).filter(t => t.parent);
+    if (trees.length && ray.intersectObjects(trees, true).length) return '樹';
+    if (this.site && ray.intersectObject(this.site.group, true).length) return '東西';
+    return null;
   }
 
   /** 學弟把東西拿回車上 */
@@ -1359,6 +1565,9 @@ export class GcpJob {
   }
 
   /** 開回公司停好下車 */
+  /** 回到公司、電腦已經擺好了 (指引要指到它) */
+  pcObj(): THREE.Object3D | null { return this.pc || null; }
+
   atOffice() {
     if (!this.pc) this.buildPC();
     // 學弟忘在現場的鐵鎚
@@ -1425,10 +1634,41 @@ export class GcpJob {
       return;
     }
     btns[0].onclick = () => run(0, ['讀取 SD 卡……', `${this.uav.log.photos} 張照片、POS 資料`, '建立影像金字塔……'], 1.6, () => { btns[1].disabled = false; });
-    btns[1].onclick = () => run(1, ['讀取 RTK 手簿匯出檔……', ...this.gcps.map(g => `${g.name}　${g.rtk ? (g.rtk.sol === 'fix' ? '固定解' : '浮動解') : '<b class="bad">沒有坐標</b>'}`), '在照片上點選控制點……'], 2, () => { btns[2].disabled = false; });
+    btns[1].onclick = () => run(1, ['讀取 RTK 手簿匯出檔……', ...this.gcps.map(g => `${g.name}　${g.rtk ? (g.rtk.sol === 'fix' ? '固定解' : '浮動解') : '<b class="bad">沒有坐標</b>'}`), '在照片上點選控制點……'], 2, () => this.pickCheckPoint(log, () => { btns[2].disabled = false; }));
     btns[2].onclick = () => run(2, ['連結點匹配……', '光束法平差……', '產生數值地表模型……', '正射糾正、鑲嵌……'], 2.6, () => this.showOrtho(box));
   }
 
+
+  /**
+   * 空三前先留一個點當檢核：不參加平差、只用來驗證。
+   * 教的是「控制點殘差好看不代表成果對，檢核點才是獨立的證據」；留在角落的點會讓那一角沒被控制住。
+   */
+  private pickCheckPoint(log: HTMLElement, next: () => void) {
+    const cands = this.gcps.filter(g => g.rtk && this.gcpVisible(g).ok);
+    if (cands.length < 4) {
+      this.checkName = null;
+      log.innerHTML += `<div class="bad">可用的點只有 ${cands.length} 個，留不出檢核點——成果沒有獨立驗證。</div>`;
+      next();
+      return;
+    }
+    const box = document.createElement('div');
+    box.className = 'pc-check';
+    box.innerHTML = `<div class="pc-check-q">留一個點當<b>檢核點</b>（不參與平差，只用來驗證成果）。留哪一個？</div>
+      <div class="pc-check-opts">${cands.map(g => `<button type="button" data-g="${g.name}">${g.name}<small>${SURF_NAME[g.spot.surf] || ''}</small></button>`).join('')}</div>
+      <div class="pc-check-tip">提示：角落的點是控制邊緣用的，留當檢核那一角就沒人控制了；留中間的點比較安全。</div>`;
+    log.appendChild(box);
+    box.querySelectorAll<HTMLButtonElement>('button[data-g]').forEach(b => {
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        this.checkName = b.dataset.g!;
+        box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+        sfx.pickup();
+        log.innerHTML += `<div>${this.checkName} 設為檢核點，其餘 ${cands.length - 1} 點進平差。</div>`;
+        box.querySelectorAll('button').forEach(x => { (x as HTMLButtonElement).disabled = true; });
+        next();
+      };
+    });
+  }
 
   /** 尾聲要用的事 */
   endingFacts() {
@@ -1454,7 +1694,10 @@ export class GcpJob {
   }
 
   /** 空三平差：每點殘差 (cm)，null = 這點不能用 */
-  private residual(g: Gcp): number | null {
+  /** 留下來當檢核的那個標 (不參加平差，只用來驗證成果) */
+  checkName: string | null = null;
+
+  residual(g: Gcp): number | null {
     if (!this.gcpVisible(g).ok || !g.rtk) return null;
     let r = 1.5 + g.rtk.tiltMm / 10 + (100 - g.res.paintScore) / 25 + (g.res.loose ? 1 : 0) + (g.spot.bld.d < 4 ? 1.5 : 0);
     if (g.rtk.sol === 'float') r += 15;
@@ -1464,11 +1707,14 @@ export class GcpJob {
     if (g.rtkStale) r += 14;
     return r;
   }
-  aero(): { ok: boolean; rmse: number | null; used: number; note: string } {
-    const rs = this.gcps.map(g => this.residual(g)).filter((r): r is number => r !== null);
-    if (rs.length < 3) return { ok: false, rmse: null, used: rs.length, note: `可用控制點只有 ${rs.length} 個，無法平差` };
-    // 分布差：少一個角放大誤差
-    const usable = this.gcps.filter(g => this.residual(g) !== null).map(g => toLocal(g.x, g.z));
+  aero(): { ok: boolean; rmse: number | null; used: number; note: string; check: number | null; checkName: string | null; gsd: number } {
+    const gsd = this.uav.gsd();
+    const ctrl = this.gcps.filter(g => g.name !== this.checkName);
+    const chk = this.gcps.find(g => g.name === this.checkName) || null;
+    const rs = ctrl.map(g => this.residual(g)).filter((r): r is number => r !== null);
+    if (rs.length < 3) return { ok: false, rmse: null, used: rs.length, note: `可用控制點只有 ${rs.length} 個，無法平差`, check: null, checkName: this.checkName, gsd };
+    // 分布差：少一個角放大誤差 (檢核點不算控制點，所以把角落的點留當檢核會被放大)
+    const usable = ctrl.filter(g => this.residual(g) !== null).map(g => toLocal(g.x, g.z));
     const corners = [[AREA.x0, AREA.z0], [AREA.x1, AREA.z0], [AREA.x0, AREA.z1], [AREA.x1, AREA.z1]];
     const miss = corners.filter(([cx, cz]) => !usable.some(g => Math.hypot(g.x - cx, g.z - cz) < 19)).length;
     const center = usable.some(g => Math.hypot(g.x - AREA_C.x, g.z - AREA_C.z) < 14);
@@ -1476,8 +1722,18 @@ export class GcpJob {
     const L = this.uav.log;
     const lowF = L.fwd < NEED_FWD - 0.01, lowS = L.side < NEED_SIDE - 0.01;
     const rmse = base * (1 + 0.3 * miss + (center ? 0 : 0.2)) * (L.eagle === 'hit' ? 1.15 : 1) * (L.seam ? 1.1 : 1) * (lowF ? 1 + (NEED_FWD - L.fwd) * 4 : 1) * (lowS ? 1 + (NEED_SIDE - L.side) * 4 : 1);
-    const notes = [miss ? `少了 ${miss} 個角的控制點，邊緣誤差放大` : '', lowF ? `前後重疊只有 ${Math.round(L.fwd * 100)}%，影像接不好` : '', lowS ? `側向重疊只有 ${Math.round(Math.max(0, L.side) * 100)}%，航帶之間接不好` : '', L.seam ? '航線中途中斷再續飛，接縫處誤差較大' : '', ...this.gcps.filter(g => g.rtkStale && this.gcpVisible(g).ok).map(g => `${g.name} 殘差特別大（測完 RTK 後標被動過？）`)].filter(Boolean);
-    return { ok: rmse <= 10, rmse, used: rs.length, note: notes.join('；') };
+    // 檢核點誤差：獨立驗證，通常比控制點殘差大一些；它離控制點越遠、角落沒被控制住，就越大
+    const chkR = chk ? this.residual(chk) : null;
+    const chkFactor = (1 + 0.3 * miss + (center ? 0 : 0.2)) * (L.eagle === 'hit' ? 1.15 : 1) * (lowF ? 1 + (NEED_FWD - L.fwd) * 4 : 1) * (lowS ? 1 + (NEED_SIDE - L.side) * 4 : 1);
+    const check = chkR === null ? null : chkR * 1.25 * chkFactor + 0.6;
+    const gsdBad = gsd > GSD_MAX;
+    const notes = [gsdBad ? `航高 ${this.uav.alt} m 的 GSD ${gsd.toFixed(1)} cm 超過規格 ${GSD_MAX} cm，業主會退件` : '',
+      miss ? `少了 ${miss} 個角的控制點，邊緣誤差放大` : '', lowF ? `前後重疊只有 ${Math.round(L.fwd * 100)}%，影像接不好` : '', lowS ? `側向重疊只有 ${Math.round(Math.max(0, L.side) * 100)}%，航帶之間接不好` : '', L.seam ? '航線中途中斷再續飛，接縫處誤差較大' : '',
+      chk && check === null ? `檢核點 ${chk.name} 在影像上看不到，沒辦法驗證` : '',
+      !chk && this.gcps.length >= 4 ? '沒有留檢核點，成果沒有獨立驗證' : '',
+      ...ctrl.filter(g => g.rtkStale && this.gcpVisible(g).ok).map(g => `${g.name} 殘差特別大（測完 RTK 後標被動過？）`)].filter(Boolean);
+    const ok = rmse <= 10 && (check === null || check <= 10) && !gsdBad;
+    return { ok, rmse, used: rs.length, note: notes.join('；'), check, checkName: this.checkName, gsd };
   }
 
   private showOrtho(pcBox?: HTMLElement) {
@@ -1495,7 +1751,7 @@ export class GcpJob {
       <div class="paper-head"><h2>航拍成果（正射影像）</h2><span class="stamp ${a.ok ? '' : 'bad'}">${a.ok ? '合格' : '不合格'}</span></div>
       <div class="ortho-body">${flew ? `<img src="${img}" alt="正射影像">` : '<div class="ortho-none">沒有航拍照片</div>'}<div>
         <table class="paper-table"><tr><th>點號</th><th>影像</th><th>RTK</th><th>殘差</th></tr>${rows}</table>
-        <p class="ortho-sum">空三平差：${a.rmse === null ? a.note : `RMSE <b>${a.rmse.toFixed(1)} cm</b>（規範 ≤ 10 cm）${a.note ? `<br>${a.note}` : ''}`}</p>
+        <p class="ortho-sum">航高 ${this.uav.alt} m、GSD <b>${a.gsd.toFixed(1)} cm</b>（規格 ≤ ${GSD_MAX} cm）<br>空三平差：${a.rmse === null ? a.note : `控制點 RMSE <b>${a.rmse.toFixed(1)} cm</b>${a.checkName ? `　檢核點 ${a.checkName} 誤差 <b class="${a.check !== null && a.check <= 10 ? '' : 'bad'}">${a.check === null ? '—' : a.check.toFixed(1) + ' cm'}</b>` : ''}（規範 ≤ 10 cm）${a.note ? `<br>${a.note}` : ''}`}</p>
       </div></div>
       <div class="paper-actions"><button class="btn-paper" id="ortho-ok"><kbd class="cap cap-accent">Enter</kbd> 交差</button></div>
     </div>`;
@@ -1510,24 +1766,50 @@ export class GcpJob {
   /** 手機版任務指引 */
   mobileGuide(): { x: number; z: number; label: string; reach?: number; obj?: THREE.Object3D } | null {
     const fd = this.fd;
+    const p0 = fd.app.player.position;
     if (!this.on || fd.inTruck || this.phone || this.benchBusy()) return null;
     if (!['site', 'observe'].includes(fd.phase)) return null;
     // 下午：航拍
     if (this.uav.stage === 'setup') {
-      if (fd.carrying === 'drone') return null;        // 自己挑空地
+      // 手上拿著無人機箱：以前這裡不給指引，玩家會完全不知道要幹嘛 (手機版沒有準心)
+      if (fd.carrying === 'drone') {
+        const c0 = this.homeSuggest();
+        if (!c0) return { x: p0.x, z: p0.z, reach: 99, label: '找一塊離車遠一點的硬地，點一下地面架起降點' };
+        const near = Math.hypot(p0.x - c0.x, p0.z - c0.z) < 3;
+        return near
+          ? { x: p0.x, z: p0.z, reach: 99, label: '點一下地面，在這裡架起降點' }
+          : { x: c0.x, z: c0.z, reach: 1.6, label: '走到那塊空地（離車遠一點），再點地面架起降點' };
+      }
       const g = fd.ground.find(x => x.item === 'drone');
       if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿無人機箱去找起降點', reach: 1.3, obj: g.obj };
       const t = fd.truck.toWorld(-3.6, 0, 0);
       return { x: t.x, z: t.z, label: '去後斗拿無人機箱', reach: 1.4, obj: fd.truck.tailHit as THREE.Object3D };
     }
+    // 航拍完成：該做的是把無人機收起來 (以前會掉到上午的分支，變成「跟學弟說可以收工了」卻按不動)
+    if (this.uav.stage === 'done') {
+      const dr = this.uav.drone;
+      if (!dr) return null;
+      if (fd.carrying) return { x: p0.x, z: p0.z, reach: 99, label: `手上有${ITEMS[fd.carrying].name}，先放下再收無人機` };
+      return { x: dr.position.x, z: dr.position.z + 1.0, reach: 1.4, label: '收起無人機', obj: dr as THREE.Object3D };
+    }
     if (this.uav.stage === 'ready' && this.uav.home) {
       const h = this.uav.home;
-      return { x: h.x, z: h.z + 1.2, label: '規劃航線、起飛', reach: 1.2 };
+      return { x: h.x, z: h.z + 1.2, label: '規劃航線、起飛', reach: 1.2, obj: (this.uav.drone || undefined) as THREE.Object3D | undefined };
     }
     // 交給學弟佈點：玩家只要開外業地圖指位置
     if (this.asstLays && this.gcps.length < MAX_GCP) {
-      if (this.asstJob) { const a2 = this.asst?.g; return a2 ? { x: a2.position.x, z: a2.position.z, label: `學弟${asstName()}正在佈 ${this.asstJob.name}`, reach: 3.0 } : null; }
+      const a2 = this.asst?.g;
+      if (this.asstJob) {
+        if (!a2) return null;
+        // 他自己挑的、還在路上：點指引就走過去叫住他
+        if (this.asstAuto && this.asstJob.walking) {
+          return { x: a2.position.x, z: a2.position.z, reach: 2.2, obj: a2 as THREE.Object3D,
+            label: `學弟要去佈 ${this.asstJob.name}${this.autoStop?.bad ? `（在${this.autoStop.why}！）` : ''}——點這裡叫住他` };
+        }
+        return { x: a2.position.x, z: a2.position.z, label: `學弟${asstName()}正在佈 ${this.asstJob.name}`, reach: 3.0 };
+      }
       const p2 = fd.app.player.position;
+      if (this.asstAuto) return { x: p2.x, z: p2.z, reach: 99, label: `等學弟${asstName()}自己挑下一個點……` };
       return { x: p2.x, z: p2.z, label: this.map ? '在地圖上點一下，指下一個點的位置' : '打開「外業地圖」，指下一個點的位置', reach: 99 };
     }
     // 上午：佈標 → RTK → 照片
@@ -1537,9 +1819,10 @@ export class GcpJob {
       return { x: t.x, z: t.z, label: '去後斗拿噴漆箱', reach: 1.4, obj: fd.truck.tailHit as THREE.Object3D };
     }
     const noRtk = this.gcps.find(g => !g.rtk);
-    if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name} 的坐標`, reach: 1.0 };
+    if (noRtk) return { x: noRtk.x + 0.8, z: noRtk.z + 0.8, label: `用 RTK 測 ${noRtk.name} 的坐標`, reach: 1.0, obj: noRtk.obj as THREE.Object3D };
     const noPhoto = this.gcps.find(g => !g.photos.close || g.photos.wide.length < 2);
-    if (noPhoto) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, label: `拍 ${noPhoto.name} 的點位照片（近 1 ＋ 遠 2）`, reach: 1.2 };
+    if (noPhoto) return { x: noPhoto.x + 1.2, z: noPhoto.z + 1.2, reach: 1.2,
+      label: `走到 ${noPhoto.name} 旁邊，按右下角「手機拍照」（近 1 ＋ 遠 2）` };
     // 位置要自己挑，但手機版沒有準心，不給指引會完全不知道要幹嘛
     if (this.gcps.length < 4) {
       const c = toWorld(AREA_C.x, AREA_C.z);
@@ -1602,7 +1885,7 @@ export class GcpJob {
     sfx.pickup();
     this.drawMap();
   }
-  closeMap() { this.map?.remove(); this.map = null; this.mapCanvas = null; document.body.classList.remove('gcp-map'); }
+  closeMap() { this.map?.remove(); this.map = null; this.mapCanvas = null; this.mapPreview = null; document.body.classList.remove('gcp-map'); }
   private drawMap() {
     const list = this.map?.querySelector('.gt-list') as HTMLElement | null;
     if (list) {
@@ -1613,12 +1896,23 @@ export class GcpJob {
     if (!c || !this.mapCanvas) return;
     const p = this.fd.app.player;
     const t = this.fd.truck;
-    drawSiteMap(c, this.mapCanvas.width, this.mapCanvas.height, {
+    const m = drawSiteMap(c, this.mapCanvas.width, this.mapCanvas.height, {
       player: { x: p.position.x, z: p.position.z, yaw: p.euler.y },
       truck: { x: t.pos.x, z: t.pos.z, heading: t.heading },
       gcps: this.gcps.map(g => ({ x: g.x, z: g.z, name: g.name })),
       asst: this.asst.g.visible ? { x: this.asst.g.position.x, z: this.asst.g.position.z } : null,
     });
+    // 預覽中的位置：畫一個閃爍的圈，提醒「再點一下才派人」
+    if (this.mapPreview && m) {
+      const l = toLocal(this.mapPreview.x, this.mapPreview.z);
+      c.save();
+      c.strokeStyle = '#facc15'; c.lineWidth = 2.5; c.setLineDash([5, 4]);
+      c.beginPath(); c.arc(m.px(l.x), m.py(l.z), 11, 0, Math.PI * 2); c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = '#facc15'; c.font = 'bold 11px sans-serif'; c.textAlign = 'center';
+      c.fillText('再點一下', m.px(l.x), m.py(l.z) - 15);
+      c.restore();
+    }
   }
 
   // ================================================================
@@ -1711,13 +2005,13 @@ export class GcpJob {
       const safe = 3 - (L.compassOk === false ? 1 : 0) - (L.eagle === 'hit' ? 1 : 0) - (L.landSpeed > 2.2 ? 1 : 0) - (L.landDist > 2 ? 1 : 0) - (L.cover < 0.995 ? 1 : 0);
       rows.push({
         label: '航拍飛行',
-        detail: [`前後重疊 ${Math.round(L.fwd * 100)}%、側向重疊 ${Math.round(Math.max(0, L.side) * 100)}%、範圍覆蓋 ${Math.round(L.cover * 100)}%`, L.compassOk === false ? '起飛點靠電線桿，指南針干擾差點撞到電線' : L.compassOk ? '指南針干擾，手動穩住' : '', L.eagle === 'hit' ? '被大冠鷲撞到，幾張照片糊掉' : L.eagle === 'dodged' ? '閃過大冠鷲' : '', L.landSpeed > 2.2 ? '降落太重' : '', L.cover < 0.995 ? '範圍沒拍滿' : '', `降落偏離起降墊 ${L.landDist.toFixed(1)} m`, `拍了 ${L.photos} 張`].filter(Boolean).join('；'),
+        detail: [`前後重疊 ${Math.round(L.fwd * 100)}%、側向重疊 ${Math.round(Math.max(0, L.side) * 100)}%、範圍覆蓋 ${Math.round(L.cover * 100)}%`, L.compassOk === false ? '起飛點靠電線桿，指南針干擾差點撞到電線' : L.compassOk ? '指南針干擾，手動穩住' : '', L.eagle === 'hit' ? '被大冠鷲撞到，幾張照片糊掉' : L.eagle === 'dodged' ? '閃過大冠鷲' : '', L.landSpeed > 2.2 ? '降落太重' : '', L.cover < 0.995 ? '範圍沒拍滿' : '', `降落偏離起降墊 ${L.landDist.toFixed(1)} m`, `拍了 ${L.photos} 張`, L.seam ? '中途換電池／返航續飛' : '', `落地時電量 ${Math.round(L.battery)}%`].filter(Boolean).join('；'),
         delta: Math.max(0, safe),
       });
       rows.push({
         label: '空三平差',
-        detail: a.rmse === null ? a.note : `用了 ${a.used} 個控制點，RMSE ${a.rmse.toFixed(1)} cm（規範 ≤ 10 cm）${a.ok ? '，合格' : '，不合格'}${a.note ? `；${a.note}` : ''}`,
-        delta: a.rmse === null ? 0 : a.rmse <= 5 ? 6 : a.rmse <= 10 ? 4 : a.rmse <= 15 ? 2 : 0,
+        detail: a.rmse === null ? a.note : `航高 ${this.uav.alt} m（GSD ${a.gsd.toFixed(1)} cm）；用了 ${a.used} 個控制點，RMSE ${a.rmse.toFixed(1)} cm${a.check !== null ? `；檢核點 ${a.checkName} 誤差 ${a.check.toFixed(1)} cm` : ''}（規範 ≤ 10 cm）${a.ok ? '，合格' : '，不合格'}${a.note ? `；${a.note}` : ''}`,
+        delta: a.rmse === null ? 0 : (() => { const v = a.check !== null ? Math.max(a.rmse, a.check) : a.rmse; const base = v <= 5 ? 6 : v <= 10 ? 4 : v <= 15 ? 2 : 0; return a.gsd > GSD_MAX ? Math.min(base, 1) : base; })(),
       });
     } else rows.push({ label: '航拍', detail: '沒有飛', delta: 0 });
     return rows;
@@ -1732,6 +2026,7 @@ export class GcpJob {
   snapshot(): AnyObj {
     return {
       asstName: asstName(), kit: [...this.kit], paint: this.paint, wind: this.wind, laid: this.laid, asstLays: this.asstLays, asstOffered: this.asstOffered, nails: this.nails.left, loadMode: this.loadMode, loadBy: this.loadBy, asstChecked: this.asstChecked, asstExtra: this.asstExtra, forgotAt: this.forgotAt, fetchBack: this.fetchBack,
+      asstAuto: this.asstAuto, autoUsed: [...this.autoUsed], autoLearned: this.autoLearned, checkName: this.checkName,
       asst: { x: this.asst.g.position.x, z: this.asst.g.position.z, state: this.asst.state, visible: this.asst.g.visible },
       gcps: this.gcps.map(g => ({ name: g.name, spot: g.spot, res: g.res, img: g.canvas.toDataURL('image/png'), rtk: g.rtk || null, photos: g.photos, notes: g.notes, paw: !!g.paw, washed: !!g.washed, crushed: !!g.crushed, busRisk: !!g.busRisk, covered: !!g.covered, rtkStale: !!g.rtkStale, shifted: !!g.shifted, seenClear: !!g.seenClear, hiddenWhy: g.hiddenWhy || '' })),
       ev: this.ev.snapshot(),
@@ -1747,6 +2042,9 @@ export class GcpJob {
     if (typeof s.nails === 'number') this.nails = { left: s.nails };
     this.loadMode = s.loadMode || ''; this.forgotAt = s.forgotAt || null; this.fetchBack = !!s.fetchBack; this.asstExtra = s.asstExtra || null;
     this.loadBy = s.loadBy || ''; this.asstChecked = !!s.asstChecked;
+    this.asstAuto = !!s.asstAuto; this.autoUsed = new Set(s.autoUsed || []); this.autoLearned = !!s.autoLearned;
+    this.checkName = s.checkName || null;
+    if (this.asstAuto) this.autoT = 6;
     this.laid = !!s.laid;
     this.asstLays = !!s.asstLays; this.asstOffered = !!s.asstOffered;
     this.ev.restore(s.ev);

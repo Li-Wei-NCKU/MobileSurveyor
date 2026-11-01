@@ -396,6 +396,7 @@ body.gcp-bench { touch-action: none; }
 .gcpb-mbar button { flex: 1 1 auto; min-width: 84px; min-height: 48px; padding: 8px 10px; border-radius: 12px; border: 1.5px solid rgba(31,45,61,.35); background: #fff; color: var(--ink); font: 700 15px var(--font-ui); }
 .gcpb-mbar button.primary { background: var(--survey-yellow); border-color: #a07400; }
 .gcpb-mbar button.on { background: #fde68a; }
+.gcpb-mbar button.danger { background: #fee2e2; border-color: #b42318; color: #b42318; }
 .gcpb-tip { padding: 0 12px; font: 600 12px var(--font-ui); color: var(--ink-soft); }
 
 /* ---------- 後斗 (手機版) ---------- */
@@ -435,6 +436,10 @@ body.gcp-bench { touch-action: none; }
 .m-trunk-msg { padding: 2px 16px; min-height: 36px; font: 600 13px/1.4 var(--font-ui); color: var(--ink-soft); }
 .m-trunk-msg.ok { color: #15803d; }
 .m-trunk-msg.bad { color: #b42318; font-weight: 800; }
+/* 後斗裡被壓住時的「幫我搬到地上」：一鍵把上面那幾件搬到車尾地上 */
+.m-trunk-msg .m-tunstack { margin-left: 8px; padding: 5px 10px; border: 2px solid #1d4f80; border-radius: 8px;
+  background: #e8f1fb; color: #1d4f80; font: 800 12px var(--font-ui); }
+.m-trunk-msg .m-tunstack:active { background: #1d4f80; color: #fff; }
 .m-trunk-bar { display: flex; gap: 8px; padding: 0 14px; }
 .m-trunk-bar:empty { display: none; }
 .m-tbtn { flex: 1; min-height: 52px; border-radius: 14px; border: 1.5px solid rgba(31,45,61,.35); background: #fff; color: var(--ink); font: 800 16px var(--font-ui); }
@@ -531,6 +536,8 @@ body.heat1 .m-hint, body.heat1 .m-goal { filter: saturate(.85); }
 }
 .uav-plan .up-btns button { min-height: 46px; font-size: 14px; }
 .uav-plan .up-btns .up-fly { grid-column: 1 / -1; }
+.uav-plan .up-btns .up-auto { grid-column: 1 / -1; }
+.uav-plan .up-shot { display: flex; align-items: center; }
 .uav-plan .up-btns button[data-a="close"] { grid-column: 1 / -1; }
 
 /* ---------- 扶尺／扶桿：第一次的手指動畫提示 ---------- */
@@ -560,6 +567,8 @@ kbd.cap.menu-cap, kbd.cap.cap-brand { display: inline-flex !important; }
 .m-intro-body { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0 2px; }
 .m-intro-art { flex: none; width: 112px; }
 .m-intro-art svg { width: 100%; height: auto; display: block; }
+.m-intro-body.wide { flex-direction: column; }
+.m-intro-art.wide { width: 100%; }
 .m-intro-steps { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 7px; font: 600 15px/1.5 var(--font-ui); }
 .m-intro-steps li::marker { color: #a07400; font-weight: 900; }
 .m-intro-steps b { color: #8a6100; }
@@ -625,3 +634,9 @@ body.m-driving .level-book, body.m-driving #level-book { display: none !importan
 .dialog-line b.bad { color: #ff9b94; }
 .dialog-line b.warn { color: #ffd23f; }
 .dialog-line b.ok { color: #86efac; }
+
+/* 水準手簿：讀數改記到 0.1 mm 之後欄位變寬，字縮一點才塞得下 */
+.level-book table { table-layout: auto; }
+.level-book th { font-size: 10px; padding: 2px 3px; white-space: nowrap; }
+.level-book td { padding: 3px; font-size: 12px; }
+.level-book td.hand { font-size: 13.5px; }

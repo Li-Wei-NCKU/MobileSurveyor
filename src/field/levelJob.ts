@@ -455,6 +455,7 @@ export class LevelJob {
       this.stepActor(a, dt, p);
     }
     if (this.swapped) this.asstTick(dt);
+    if (this.fd.phase === 'packup') this.asstFetchFar();
     this.holdTick(dt);
     this.refreshStaff();
     this.updateRings();
@@ -553,7 +554,9 @@ export class LevelJob {
         return;
       case 'reportLoad': {
         // 搬完東西跑來問學長要不要檢查
-        if (this.fd.phase !== 'prep' || this.fd.inTruck) { a.state = 'idle'; return; }
+        if (this.fd.phase !== 'prep') { a.state = 'idle'; return; }
+        // 玩家上車了就站在旁邊等 (以前會直接放棄，對話永遠不會出現，然後在現場被罰一趟)
+        if (this.fd.inTruck) { this.face(a, p.x, p.z); return; }
         const d = Math.hypot(p.x - a.g.position.x, p.z - a.g.position.z);
         if (d > 2.2) { this.walk(a, p.x, p.z, a.speed || 2.6, dt); return; }
         this.face(a, p.x, p.z);
@@ -923,6 +926,21 @@ export class LevelJob {
     }
   }
 
+  /**
+   * 這件設備是不是「正在用」：學弟拿著、已經立在點上、已經擺出去、已經裝在腳架上。
+   * fieldDay 的「忘了帶」清單用這個判定，不然交出去的標尺會被當成沒帶到。
+   */
+  itemInUse(it: ItemId): boolean {
+    if (it === 'staff') return this.haveStaff || !!this.rodAt || this.swapped;
+    if (it === 'plate') return this.havePlate || this.plPlates || this.swapped
+      || this.stations.some(st => !!st.back.pt.plate || !!st.fore?.pt.plate);
+    if (it === 'cones') return !!this.cones || !!this.coneObj;
+    if (it === 'tripod') return !!this.inst || this.carrySet;
+    if (it === 'level') return this.instState === 'mounted' || this.instState === 'leveled';
+    if (it === 'toolbag') return this.bookOut;
+    return false;
+  }
+
   /** 手簿拿出來過就一直在身上 (工具袋本身還是要記得收) */
   private bookOut = false;
   private toolbagHere(): boolean {
@@ -964,7 +982,7 @@ export class LevelJob {
     if (!this.lv.isLeveled && this.instState === 'leveled' && !this.notes.includes('補償器警示')) {
       // 氣泡沒進圈：補償器超出範圍，讀數會偏
       this.notes.push('補償器警示');
-      ui.toast('氣泡沒居中，補償器可能超出範圍，讀數會不準。', 'warn', 3500);
+      ui.toast('氣泡沒居中，補償器可能超出工作範圍，讀數會不準。', 'warn', 3500);
     }
     this.readCount++;
     if (this.readCount === this.tiltPlanned) this.rodTilt = (Math.random() < 0.5 ? -1 : 1) * 0.06;
@@ -1078,9 +1096,11 @@ export class LevelJob {
   }
 
   /** 擋路的人是不是站在儀器和標尺之間 */
-  private blockingLine(pt: Pt): boolean {
-    if (!this.blocker || !this.inst) return false;
-    const ax = this.inst.position.x, az = this.inst.position.z;
+  private blockingLine(pt: Pt, from?: { x: number; z: number }): boolean {
+    if (!this.blocker) return false;
+    const o = from ?? (this.inst ? { x: this.inst.position.x, z: this.inst.position.z } : null);
+    if (!o) return false;
+    const ax = o.x, az = o.z;
     const bx = pt.x - ax, bz = pt.z - az;
     const L2 = bx * bx + bz * bz;
     const px = this.blocker.g.position.x - ax, pz = this.blocker.g.position.z - az;
@@ -1113,7 +1133,7 @@ export class LevelJob {
     if (this.swapped) { this.swapHint(); return; }
     const st = this.cur;
     if (!st) {
-      this.fd.panel('observe', this.reloc ? '扛著儀器到旁邊的藍圈重新架站（避開騎士）。' : !this.haveStaff ? `先把標尺、鐵墊交給學弟${asstName()}，他去 BM-1035 立尺。` : '扛腳架到藍色圈圈（建議架站位置）按 E 架站。');
+      this.fd.panel('observe', this.reloc ? '扛著儀器到旁邊的藍圈重新架站（避開騎士）。' : !this.haveStaff ? `先把標尺、鐵墊交給學弟${asstName()}，他去 BM-1035 立尺。` : '扛腳架到藍色圈圈（建議架站位置），按 E 架站。');
       return;
     }
     let h = '';
@@ -1149,7 +1169,23 @@ export class LevelJob {
     const fd = this.fd;
     if (fd.carrying) { ui.toast('手上有東西，先放下（G）。', 'warn'); return; }
     const ip = this.inst!.position;
-    this.reloc = rider ? { x: ip.x, z: ip.z + 2.4 } : null;
+    // 建議位置要「垂直於視線」偏開，而且往離擋路的人比較遠的那一側
+    let spot: { x: number; z: number } | null = null;
+    if (rider) {
+      const b = this.backPt();
+      const q = this.rodXZ(b);
+      const dx = q.x - ip.x, dz = q.z - ip.z;
+      const L = Math.hypot(dx, dz) || 1;
+      let px = -dz / L, pz = dx / L;
+      const bl = this.blocker?.g.position;
+      if (bl) {
+        const toB = { x: bl.x - ip.x, z: bl.z - ip.z };
+        if (px * toB.x + pz * toB.z > 0) { px = -px; pz = -pz; }   // 往離他遠的那一邊
+      }
+      spot = { x: ip.x + px * 2.6, z: ip.z + pz * 2.6 };
+      if (this.spotBlocked(spot.x, spot.z)) spot = { x: ip.x - px * 2.6, z: ip.z - pz * 2.6 };
+    }
+    this.reloc = spot;
     const withLevel = this.instState !== 'tripod';
     this.removeInst();
     this.stations.pop();
@@ -1208,12 +1244,18 @@ export class LevelJob {
   }
   /** 轉點不合適的原因：第二站 (學弟) 要能前後視都看得到 */
   private tpBad(x: number, z: number, df: number): string | null {
-    if (df > 40) return `太遠了（${df.toFixed(0)} m，視距最多 40 m）`;
+    if (df > 30) return `太遠了（${df.toFixed(0)} m，超過 30 m 讀不到條碼）`;
     const rem = Math.hypot(this.bm2.x - x, this.bm2.z - z);
     if (Math.hypot(this.bm2.x - x, this.bm2.z - z) < 3.5) return `第一站前視先放轉點（下一站換學弟${asstName()}架，才看 BM-1036）`;
     if (rem > 70) return `這裡離 BM-1036 太遠（${rem.toFixed(0)} m），學弟${asstName()}那一站看不到，往前一點`;
     if (rem < 10) return '太靠近 BM-1036 了，往回一點';
     return null;
+  }
+
+  /** 人在現場範圍內嗎 (回公司拿東西時階段還是 site，要用距離判斷) */
+  private atSite(x: number, z: number): boolean {
+    const S = this.fd.J.site;
+    return Math.hypot(x - S.x, z - S.z) < S.r;
   }
 
   /** 架站時的後視點 (尺目前所在) */
@@ -1225,6 +1267,8 @@ export class LevelJob {
     if (fd.carrying === 'cones') {
       if (this.cones) return null;
       const p = fd.app.player.position;
+      // 回公司拿東西時階段還是 site：這時候不能把交通錐擺在公司院子裡
+      if (!this.atSite(p.x, p.z)) return '交通錐要擺在現場的路肩，這裡不用擺';
       return this.coneBehind(p.x, p.z)
         ? '在車子後面擺交通錐（來車會先看到）'
         : '這裡是車頭前面，來車看不到……還是要擺？';
@@ -1248,6 +1292,7 @@ export class LevelJob {
       if (db > 30) return `離 ${b.name} 太遠了（${db.toFixed(0)} m）`;
       const hit = this.spotBlocked(q.x, q.z);
       if (hit) return `這裡架不下去（${hit}擋著）`;
+      if (this.blocker && this.blockingLine(b, q)) return `這裡看不到 ${b.name}（${this.blockedBy()}站在視線上）`;
       // 離建議位置 (藍圈) 還很遠就先講一聲，不然走到一半誤觸就架在爛位置
       const r0 = this.reloc || this.s1;
       const dBlue = Math.hypot(q.x - r0.x, q.z - r0.z);
@@ -1265,7 +1310,9 @@ export class LevelJob {
       if (why) return why;
       const hit = this.spotBlocked(q.x, q.z, 0.25);
       if (hit) return `這裡放不了鐵墊（${hit}擋著）`;
-      return `叫學弟${asstName()}到這裡立尺（前視 ${df.toFixed(1)} m／後視 ${db.toFixed(1)} m，差 ${Math.abs(df - db).toFixed(1)} m）`;
+      const gap = Math.abs(df - db);
+      const warn = gap > 2 ? '，超過內規 2 m，會扣分' : '';
+      return `叫學弟${asstName()}到這裡立尺（前視 ${df.toFixed(1)} m／後視 ${db.toFixed(1)} m，差 ${gap.toFixed(1)} m${warn}）`;
     }
     return null;
   }
@@ -1275,6 +1322,7 @@ export class LevelJob {
     if (!['site', 'observe'].includes(fd.phase)) return false;
     if (fd.carrying === 'cones' && !this.cones) {
       const p = fd.app.player.position;
+      if (!this.atSite(p.x, p.z)) { sfx.error(); ui.toast('交通錐要擺在現場的路肩，不是在公司。', 'warn', 2800); return true; }
       const behind = this.coneBehind(p.x, p.z);
       fd.consumeHeld();
       // 擺在車後 = 一定擺到對的位置 (不用自己瞄)；擺在車前就是擺錯，警察會念
@@ -1310,6 +1358,11 @@ export class LevelJob {
       if (db > 30) { sfx.error(); ui.toast('離後視點太遠了，到藍圈架站。', 'warn'); return true; }
       const hit = this.spotBlocked(q.x, q.z);
       if (hit) { sfx.error(); ui.toast(`這裡架不下去，${hit}擋著。`, 'warn'); return true; }
+      if (this.blocker && this.blockingLine(b, q)) {
+        sfx.error();
+        ui.toast(`這裡看不到 ${b.name}：${this.blockedBy()}剛好站在視線上。往旁邊 (藍圈) 移一點再架。`, 'warn', 4200);
+        return true;
+      }
       this.reloc = null;
       const withLevel = this.carrySet;
       fd.consumeHeld();
@@ -1331,10 +1384,21 @@ export class LevelJob {
       const pt: Pt = { name: `TP${this.tps.length + 1}`, x: q.x, z: q.z, kind: 'tp', plate: null, sink: 0, top: 0 };
       this.tps.push(pt);
       st.fore = { pt, dist: df };
+      this.warnBalance(st, df);
       this.sendRod(pt);
       return true;
     }
     return false;
+  }
+
+  /** 前後視距差超過公司內規就當場講，不要等到收工才扣分 */
+  private warnBalance(st: Station, df: number) {
+    const db = st.back.dist || this.dist(st.back.pt);
+    const gap = Math.abs(df - db);
+    if (gap <= 2) return;
+    sfx.error();
+    this.notes.push(`第 ${this.stations.length} 站前後視距差 ${gap.toFixed(1)} m`);
+    ui.toast(`這一站前視 ${df.toFixed(1)} m、後視 ${db.toFixed(1)} m，差 ${gap.toFixed(1)} m，超過公司內規的 2 m——收工會扣分。`, 'warn', 5200);
   }
 
   /** 叫學弟帶尺過去 (轉點要放鐵墊) */
@@ -1412,7 +1476,7 @@ export class LevelJob {
       const t = fromTruck('cones', '從後斗拿交通錐');
       if (t) return t;
     }
-    if (this.carrySet) { const q = this.reloc || this.s1; return { x: q.x, z: q.z, label: '扛到藍圈那裡架站', reach: 1.3 }; }
+    if (this.carrySet) { const q = this.reloc || this.s1; const near = Math.hypot(fd.app.player.position.x - q.x, fd.app.player.position.z - q.z) < 2.5; return { x: q.x, z: q.z, label: near ? '到了，按「放下整組儀器」' : '扛到藍圈那裡架站', reach: 1.3 }; }
     // 還沒把標尺交給學弟
     if (!this.rodAt && !this.swapped) {
       const a = this.asst?.g;
@@ -1426,7 +1490,7 @@ export class LevelJob {
     }
     if (this.hold) return null;                       // 正在扶尺
     if (!inst) {
-      if (fd.carrying === 'tripod') { const q = this.reloc || this.s1; return { x: q.x, z: q.z, label: '走到藍圈架站', reach: 1.3 }; }
+      if (fd.carrying === 'tripod') { const q = this.reloc || this.s1; const near = Math.hypot(fd.app.player.position.x - q.x, fd.app.player.position.z - q.z) < 2.5; return { x: q.x, z: q.z, label: near ? '到了，按「在這裡架站」' : '走到藍圈架站', reach: 1.3 }; }
       const g = fd.ground.find(x => x.item === 'tripod');
       if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起三腳架', reach: 1.3, obj: g.obj };
       return fromTruck('tripod', '從後斗拿三腳架');
@@ -1435,8 +1499,8 @@ export class LevelJob {
     if (this.instState === 'tripod') {
       if (fd.carrying === 'level') return { ...at, label: '把水準儀裝上腳架' };
       const g = fd.ground.find(x => x.item === 'level');
-      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起自動水準儀箱', reach: 1.3, obj: g.obj };
-      return fromTruck('level', '從後斗拿自動水準儀箱') || { ...at, label: '裝水準儀' };
+      if (g) return { x: g.obj.position.x, z: g.obj.position.z, label: '拿起電子水準儀箱', reach: 1.3, obj: g.obj };
+      return fromTruck('level', '從後斗拿電子水準儀箱') || { ...at, label: '裝水準儀' };
     }
     if (this.instState === 'mounted') return { ...at, label: '整平水準儀' };
     // 要讀數了但手簿 (工具袋) 不在儀器旁邊：帶玩家去拿 (地上 → 後斗 → 忘在公司)
@@ -1474,21 +1538,46 @@ export class LevelJob {
         const q = this.rodXZ(this.rodAt);
         return { x: q.x + 0.9, z: q.z + 0.5, label: `到 ${this.rodAt.name} 旁邊等學弟架好`, reach: 1.1 };
       }
+      if (this.aJob === 'waitBack' && this.asst.state === 'goto') {
+        const q = this.rodXZ(st2?.back.pt || this.bm1);
+        const d = Math.hypot(this.asst.g.position.x - q.x, this.asst.g.position.z - q.z);
+        return { x: q.x + 0.9, z: q.z + 0.5, label: `等學弟走過去立尺（還有 ${d.toFixed(0)} m）`, reach: 1.1 };
+      }
       const want = this.aJob === 'waitFore' || this.aJob === 'readFore' ? st2?.fore?.pt : st2?.back.pt;
       const pt = want || this.rodAt;
-      if (pt && this.rodAt === pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `去扶尺（${pt.name}）`, reach: 1.0 }; }
+      if (pt && this.rodAt === pt) {
+        const q = this.rodXZ(pt);
+        // 指到標尺本身 (有 obj)，點指引走到就直接開始扶；以前走到了畫面上沒有任何按鈕
+        const so = this.staff.visible ? (this.staff as THREE.Object3D) : undefined;
+        return { x: q.x + 0.9, z: q.z + 0.5, label: `去扶尺（${pt.name}）`, reach: 1.0, obj: so };
+      }
       if (pt) { const q = this.rodXZ(pt); return { x: q.x + 0.9, z: q.z + 0.5, label: `到 ${pt.name}`, reach: 1.1 }; }
       return null;
     }
     const st = this.cur;
     if (!st) return null;
-    if (st.back.read === undefined) return { ...at, label: `回儀器旁讀後視（${st.back.pt.name}）` };
+    if (st.back.read === undefined) {
+      if (this.rodAt !== st.back.pt || this.asst.state !== 'hold') {
+        const q = this.rodXZ(st.back.pt);
+        const d = Math.hypot(this.asst.g.position.x - q.x, this.asst.g.position.z - q.z);
+        if (d > 1.5) return { x: q.x + 1.2, z: q.z + 0.8, reach: 2.0, label: `等學弟走到 ${st.back.pt.name} 立尺（還有 ${d.toFixed(0)} m）` };
+      }
+      return { ...at, label: `回儀器旁讀後視（${st.back.pt.name}）` };
+    }
     if (!st.fore) {
       const q = this.tpAuto();
       if (q) return { x: q.x, z: q.z, label: `叫學弟${asstName()}到綠圈立尺（前視點）`, reach: 2.4 };
       return null;                                    // 綠圈不能用就自己挑一個
     }
-    if (st.fore.read === undefined) return { ...at, label: `回儀器旁讀前視（${st.fore.pt.name}）` };
+    if (st.fore.read === undefined) {
+      // 學弟還沒立好尺就先別叫玩家回儀器 (按下去只會得到「還沒立好尺」)
+      if (this.rodAt !== st.fore.pt || this.asst.state !== 'hold') {
+        const q = this.rodXZ(st.fore.pt);
+        const d = Math.hypot(this.asst.g.position.x - q.x, this.asst.g.position.z - q.z);
+        return { x: q.x + 1.2, z: q.z + 0.8, reach: 2.0, label: `等學弟走到 ${st.fore.pt.name} 立尺（還有 ${d.toFixed(0)} m）` };
+      }
+      return { ...at, label: `回儀器旁讀前視（${st.fore.pt.name}）` };
+    }
     return { ...at, label: '這站完成，換學弟操作' };
   }
 
@@ -1517,6 +1606,9 @@ export class LevelJob {
     if (!s1) return null;
     const df = Math.hypot(s1.x - this.inst.position.x, s1.z - this.inst.position.z);
     if (df < 4 || this.tpBad(s1.x, s1.z, df) || this.spotBlocked(s1.x, s1.z, 0.25)) return null;
+    // 綠圈是「一鍵照規矩做」的捷徑：配不平 (內規前後視距差 ≤ 2 m) 就不給，不要害玩家被扣分
+    const db0 = st.back.dist || this.dist(st.back.pt);
+    if (Math.abs(df - db0) > 2) return null;
     return s1;
   }
 
@@ -1529,6 +1621,7 @@ export class LevelJob {
     const pt: Pt = { name: `TP${this.tps.length + 1}`, x: q.x, z: q.z, kind: 'tp', plate: null, sink: 0, top: 0 };
     this.tps.push(pt);
     st.fore = { pt, dist: df };
+    this.warnBalance(st, df);
     this.sendRod(pt);
     return true;
   }
@@ -1675,6 +1768,8 @@ export class LevelJob {
       ], (o) => { if (o.id === 'help') { this.loadBy = 'asst'; this.asstLoad(); } this.relock(); });
       return;
     }
+    // 搬完了還沒對過清單：直接開清點對話 (指引也是指到他身上)
+    if (fd.phase === 'prep' && this.asstLoaded && !this.asstChecked) { a.state = 'talking'; this.askCheckTrunk(a); return; }
     ui.toast(this.asstLoading ? `學弟${asstName()}：「搬東西中，等我一下！」` : `學弟${asstName()}：「東西都好了就出發吧！我坐副駕。」`, 'info', 3000);
   }
 
@@ -1701,6 +1796,9 @@ export class LevelJob {
     const tk = fd.truck.pos;
     list = list.filter(it => !fd.grid.placed.some(p => p.item === it) && fd.carrying !== it && fd.yardItemPos(it))
       .sort((a1, b1) => {
+        // 多搬的那件最後搬 = 疊在最上層，玩家發現之後一下就拿得下來 (不會被必帶設備壓住)
+        if (a1 === this.asstExtra) return 1;
+        if (b1 === this.asstExtra) return -1;
         const pa = fd.yardItemPos(a1)!, pb = fd.yardItemPos(b1)!;
         return Math.hypot(pa.x - tk.x, pa.z - tk.z) - Math.hypot(pb.x - tk.x, pb.z - tk.z);
       });
@@ -1882,7 +1980,7 @@ export class LevelJob {
       });
     } else {
       ui.showDialog('路過的阿伯', '「少年仔，你們在量什麼？那根尺上面一格一格的是什麼？」', [
-        { text: '「水準測量，量兩個點的高低差。尺上一格是一公分。」', reply: '「喔～所以下雨會積水就是這個在管的喔？」', score: 1, tag: '向路人解釋水準測量', id: 'a' },
+        { text: '「水準測量，量兩個點的高低差。尺上的黑白條是條碼，儀器會自己讀。」', reply: '「喔～所以下雨會積水就是這個在管的喔？」', score: 1, tag: '向路人解釋水準測量', id: 'a' },
         { text: '「在工作，不方便聊。」', reply: '「好啦好啦。」', score: 0, tag: '打發路人', id: 'b' },
       ], (o) => { fd.addPR(o.score, o.tag); leave(); });
     }
@@ -2305,7 +2403,7 @@ export class LevelJob {
         good: [
           plate ? '「這塊鐵墊被踢到，整條路線就要從頭重測，站遠一點看好不好？」' : '「這根尺被推到，整條路線就要從頭重測，站遠一點看好不好？」',
           '「等我讀完這一次，讓你們從望遠鏡看一眼好不好？」',
-          '「你們幫我數數看尺上有幾個紅色的『E』，數對了我請你們喝水。」',
+          '「你們幫我數數看尺上有幾條粗的黑線，數對了我請你們喝水。」',
           '「你們叫什麼名字？當我的小幫手，幫我看有沒有車過來。」',
           '「先退到白線後面，那裡車看得到你們，我再講給你們聽。」',
         ],
@@ -2330,17 +2428,17 @@ export class LevelJob {
         ui.showDialog('小朋友', plate ? '「好啦……那塊鐵餅到底是什麼？」' : '「好啦……那根尺到底是什麼？」', [
           plate
             ? { text: '「這叫鐵墊，標尺要站在上面才不會陷下去，動到就要整條重測喔。」', reply: '「喔～好啦，我們不碰。掰掰！」', score: 2, tag: '擋下想踢鐵墊的小朋友，並解釋鐵墊', id: 'say' }
-            : { text: '「這叫標尺，我扶著它，學長用望遠鏡讀上面的刻度，量兩個點的高低差。動到就要整條重測喔。」', reply: '「哇～那你不能放手欸。好啦我們不碰！」', score: 2, tag: '擋下想推標尺的小朋友，並解釋水準測量', id: 'say' },
-          { text: '「你們幫我數數看尺上有幾個紅色的『E』，數對了等一下讓你們從望遠鏡看一眼。」',
+            : { text: '「這叫標尺，我扶著它，學長用儀器讀上面的條碼，量兩個點的高低差。動到就要整條重測喔。」', reply: '「哇～那你不能放手欸。好啦我們不碰！」', score: 2, tag: '擋下想推標尺的小朋友，並解釋水準測量', id: 'say' },
+          { text: '「你們幫我數數看尺上有幾條粗的黑線，數對了等一下讓你們從望遠鏡看一眼。」',
             reply: '「一、二、三……欸不對啦，重數！」（兩個人蹲在尺前面數得很認真，沒空碰了）', score: 3,
-            tag: `給小朋友一個任務（數標尺刻度），順便把他們的手從${what}移開`, id: 'job' },
+            tag: `給小朋友一個任務（數標尺的條碼），順便把他們的手從${what}移開`, id: 'job' },
           { text: '「走開走開。」', reply: '……（小朋友嘟著嘴跑掉了）', score: 1, tag: `擋下想碰${what}的小朋友`, id: 'go' },
         ], (o) => {
           this.fd.addPR(o.score, o.tag);
           if (o.id === 'job') {
             // 給任務：小朋友蹲在尺前面數格子，等你收工前再給他們看望遠鏡
-            tell('把很盧的小朋友變成幫手', '他們蹲在標尺前面數刻度，整段觀測都沒再碰東西');
-            setTimeout(() => ui.toast('小朋友蹲在標尺前面數格子，數得很專心……這下安全了。', 'good', 4000), 600);
+            tell('把很盧的小朋友變成幫手', '他們蹲在標尺前面數條碼，整段觀測都沒再碰東西');
+            setTimeout(() => ui.toast('小朋友蹲在標尺前面數黑線，數得很專心……這下安全了。', 'good', 4000), 600);
           }
           this.kidsGo();
           this.relock();
@@ -2404,7 +2502,11 @@ export class LevelJob {
     this.clearArrows();
     this.ensureInteractive(this.staff, false);
     this.book(this.stations, true);
-    ui.toast(`測到 BM-1036 了！閉合差 ${this.misclosureMm().toFixed(1)} mm。收工！`, 'good', 5000);
+    const wMm = this.misclosureMm();
+    ui.toast(`測到 BM-1036 了！閉合差 ${wMm.toFixed(1)} mm（公司內規 3 mm；這條路線只有 ${(this.routeKm() * 1000).toFixed(0)} m，規範 3√K 其實只允許 ${this.specMm().toFixed(1)} mm）。收工！`,
+      Math.abs(wMm) <= 3 ? 'good' : 'warn', 5600);
+    const why0 = this.misclosureWhy();
+    if (why0) setTimeout(() => ui.toast(`閉合差這麼大的原因：${why0}。`, 'bad', 7000), 1500);
     // 轉點的鐵墊都收起來了；玩家一手標尺、一手鐵墊
     this.tps.forEach(t => { if (t.plate) { this.sm.scene.remove(t.plate); t.plate = null; } });
     this.rodAt = null;
@@ -2434,13 +2536,49 @@ export class LevelJob {
     fd.setPhase('packup');
   }
 
+  /**
+   * 收工時，離車 25 m 以上的東西 (常常是最後一站的標尺、鐵墊) 由學弟去收。
+   * 不然玩家要為了一支尺來回走 120 m，中途還會中暑。
+   */
+  private asstFetchFar() {
+    const fd = this.fd;
+    const a = this.asst;
+    if (this.fetching || a.state !== 'follow' || !a.g.visible) return;
+    const t = fd.truck.toWorld(-3.4, 0, 0.9);
+    const far = fd.ground
+      .filter(g => Math.hypot(g.obj.position.x - t.x, g.obj.position.z - t.z) > 25)
+      .sort((p, q) => Math.hypot(q.obj.position.x - t.x, q.obj.position.z - t.z) - Math.hypot(p.obj.position.x - t.x, p.obj.position.z - t.z))[0];
+    if (!far) return;
+    const it = far.item;
+    const pos = far.obj.position.clone();
+    this.fetching = true;
+    if (!this.fetchTold) {
+      this.fetchTold = true;
+      ui.toast(`學弟${asstName()}：「學長，遠的那幾件我去收，你收車子附近的就好！」`, 'good', 4000);
+    }
+    this.goTo(a, pos.x + 0.6, pos.z + 0.6, 3.4, () => {
+      if (!fd.takeGroundItem(it, pos, 1.2)) { this.fetching = false; return; }
+      this.setHandVis(it);
+      this.goTo(a, t.x, t.z, 3.4, () => {
+        this.setHandVis(null);
+        if (!fd.autoLoad(it)) fd.spawnGround(it, V(t.x, this.sm.heightAt(t.x, t.z + 0.6), t.z + 0.6), 0);
+        sfx.thud();
+        ui.toast(`學弟${asstName()}：「${ITEMS[it].name}收回來了。」`, 'info', 2200);
+        this.fetching = false;
+        a.state = 'follow';
+      });
+    });
+  }
+  private fetching = false;
+  private fetchTold = false;
+
   // ================================================================
   // 交換角色：學弟操作儀器、玩家扶尺
   // ================================================================
   private offerSwap() {
     if (this.swapped || this.finished) return;
     ui.faceSpeaker(this.asst.g);
-    ui.showDialog(`學弟${asstName()}`, '「學長～這台電子水準好酷，我也想操作看看！換你扶尺好不好？我會好好架站的。」', [
+    ui.showDialog(`學弟${asstName()}`, '「學長～這台電子水準儀好酷，我也想操作看看！換你扶尺好不好？我會好好架站的。」', [
       { text: '「好啊，換你。扶尺我來。」', reply: '「耶！學長你先去 TP1 扶尺，我把儀器搬過去。」', score: 0, tag: '', id: 'a' },
       { text: '「……好啦，腳架小心一點。」', reply: '「放心啦！」', score: 0, tag: '', id: 'b' },
     ], () => { this.doSwap(); this.relock(); });
@@ -2593,7 +2731,7 @@ export class LevelJob {
       waitBack: `對著 ${st?.back.pt.name || '標尺'} 的標尺按 E 扶尺，讓學弟${asstName()}讀後視。`,
       readBack: `扶好尺！WASD 把尺上的氣泡壓在圈裡，學弟${asstName()}正在讀後視。`,
       waitFore: this.fd.carrying === 'staff'
-        ? '拿著標尺走到 BM-1036（紅色箭頭）按 E 立尺。'
+        ? '拿著標尺走到 BM-1036（紅色箭頭），按 E 立尺。'
         : '後視讀好了。對著標尺按 E 拿起來，往前找前視點。',
       readFore: `扶好尺！學弟${asstName()}正在讀前視。`,
     };
@@ -2695,11 +2833,14 @@ export class LevelJob {
     if (!h) return;
     const k = this.holdKeys;
     // 風吹 + 手抖：隨機推力；玩家用 WASD 修正
-    const gust = 0.85 + Math.sin(this.time * 0.7) * 0.3;
+    // 讀數前後是最緊張的時候：陣風加大，手指不能完全放著不動
+    const busy0 = this.aJob === 'readBack' || this.aJob === 'readFore';
+    const tense = busy0 ? 2.1 : 1;
+    const gust = (0.85 + Math.sin(this.time * 0.7) * 0.3) * tense;
     const px = (k.r ? 1 : 0) - (k.l ? 1 : 0) + this.holdPad.x;
     const py = (k.d ? 1 : 0) - (k.u ? 1 : 0) + this.holdPad.y;
-    h.vx += ((Math.random() - 0.5) * gust + px * 3.4) * dt;
-    h.vy += ((Math.random() - 0.5) * gust + py * 3.4) * dt;
+    h.vx += ((Math.random() - 0.5) * gust + Math.sin(this.time * 2.7) * 0.25 * tense + px * 3.4) * dt;
+    h.vy += ((Math.random() - 0.5) * gust + Math.cos(this.time * 2.2) * 0.25 * tense + py * 3.4) * dt;
     const damp = Math.pow(0.16, dt);
     h.vx *= damp; h.vy *= damp;
     h.bx += h.vx * dt * 2; h.by += h.vy * dt * 2;
@@ -2750,6 +2891,29 @@ export class LevelJob {
   private knownDh(): number { return this.bm2.top - this.bm1.top; }
   private misclosureMm(): number { return (this.sumDh() - this.knownDh()) * 1000; }
 
+  /** 路線長度 (km)：前後視距加起來 */
+  private routeKm(): number {
+    const m = this.stations.reduce((a, st) => a + (st.back.dist || 0) + (st.fore?.dist || 0), 0);
+    return Math.max(0.001, m / 1000);
+  }
+
+  /** 規範允許閉合差 3√K mm */
+  private specMm(): number { return 3 * Math.sqrt(this.routeKm()); }
+
+  /** 閉合差為什麼這麼大：把現場記下的原因講出來 (不然玩家只看到一個數字) */
+  private misclosureWhy(): string {
+    const w = Math.abs(this.misclosureMm());
+    if (w <= 3) return '';
+    const why: string[] = [];
+    if (this.rodWrong && !this.caughtWrong) why.push(`學弟${asstName()}在 ${this.bm1.name} 的尺沒立在標石頂上（差了大約標石高 28 cm）`);
+    if (this.notes.some(n => /沒放鐵墊/.test(n))) why.push('轉點沒放鐵墊，標尺陷進土裡');
+    if (this.notes.some(n => /撞到腳架/.test(n))) why.push('腳架被撞過');
+    if (this.notes.some(n => /震動中讀數/.test(n))) why.push('有大車經過時讀數');
+    if (this.notes.some(n => /補償器警示/.test(n))) why.push('氣泡沒居中就讀數');
+    if (!why.length) return '';
+    return why.join('；');
+  }
+
   /** 收工時：記下要帶到第三天的事 */
   crossDay() {
     const missed = this.wrongDone && !this.caughtWrong;
@@ -2773,7 +2937,8 @@ export class LevelJob {
     const extra = [...new Set(this.notes.filter(n => n !== '補償器警示'))];
     const serious = extra.filter(n => /震動中讀數|沒立在標石|踢動|沒放鐵墊|撞到腳架|交通錐留在/.test(n)).length;
     const pen = Math.min(12, serious * 3);
-    const detail = `${this.stations.length} 站；閉合差 ${this.misclosureMm().toFixed(1)} mm（限 3 mm）；扶尺${hl.length ? `平均偏離 ${Math.round(tiltAvg * 100)}%` : '（沒扶到尺）'}；視距差合格 ${okBal}/${bal.length} 站${extra.length ? '；' + extra.join('、') : ''}`;
+    const why = this.misclosureWhy();
+    const detail = `${this.stations.length} 站；閉合差 ${this.misclosureMm().toFixed(1)} mm（公司內規 3 mm；路線 ${(this.routeKm() * 1000).toFixed(0)} m，規範 3√K = ${this.specMm().toFixed(1)} mm）${why ? `←${why}` : ''}；扶尺${hl.length ? `平均偏離 ${Math.round(tiltAvg * 100)}%` : '（沒扶到尺）'}；視距差合格 ${okBal}/${bal.length} 站${extra.length ? '；' + extra.join('、') : ''}`;
     const bonus = this.caughtWrong ? 3 : 0;
     return { label: '水準觀測品質', detail: detail + (this.caughtWrong ? `；發現學弟${asstName()}尺沒立在標石上並更正` : ''), delta: Math.max(0, readPts + balPts + wPts - pen + bonus) };
   }
@@ -2792,20 +2957,20 @@ export class LevelJob {
     let b = document.getElementById('level-book');
     if (!stations || this.fd.job !== 'level') { b?.remove(); return; }
     if (!b) { b = document.createElement('div'); b.id = 'level-book'; b.className = 'level-book paper'; document.body.appendChild(b); }
-    const f = (v?: number) => (v === undefined ? '' : v.toFixed(3));
+    const f = (v?: number) => (v === undefined ? '' : v.toFixed(4));   // 電子水準儀讀到 0.1 mm
     const rows = stations.map((s, i) => {
       const dh = s.back.read !== undefined && s.fore?.read !== undefined ? s.back.read - s.fore.read : undefined;
       const bd = s.back.dist ? s.back.dist.toFixed(1) : '';
       const fdist = s.fore?.dist ? s.fore.dist.toFixed(1) : '';
       const diff = s.back.dist && s.fore?.dist ? Math.abs(s.back.dist - s.fore.dist) : undefined;
-      return `<tr><td>${i + 1}</td><td>${s.back.pt.name}</td><td class="hand">${f(s.back.read)}</td><td>${s.fore?.pt.name || ''}</td><td class="hand">${f(s.fore?.read)}</td><td class="hand">${dh === undefined ? '' : (dh >= 0 ? '+' : '') + dh.toFixed(3)}</td><td class="${diff !== undefined && diff > 2 ? 'bad' : ''}">${bd}${fdist ? ' / ' + fdist : ''}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${s.back.pt.name}</td><td class="hand">${f(s.back.read)}</td><td>${s.fore?.pt.name || ''}</td><td class="hand">${f(s.fore?.read)}</td><td class="hand">${dh === undefined ? '' : (dh >= 0 ? '+' : '') + dh.toFixed(4)}</td><td class="${diff !== undefined && diff > 2 ? 'bad' : ''}">${bd}${fdist ? ' / ' + fdist : ''}</td></tr>`;
     }).join('');
     const sum = this.sumDh();
     b.innerHTML = `
-      <div class="lb-head"><strong>水準手簿</strong><span>BM-1035 H = ${H1.toFixed(4)} m</span></div>
+      <div class="lb-head"><strong>水準手簿</strong><span>單位 m　BM-1035 H = ${H1.toFixed(4)}</span></div>
       <table><thead><tr><th>站</th><th>後視點</th><th>後視</th><th>前視點</th><th>前視</th><th>高差</th><th>視距 後/前</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" class="lb-empty">還沒架站</td></tr>'}</tbody></table>
-      ${done ? `<div class="lb-foot">Σ高差 ${(sum >= 0 ? '+' : '') + sum.toFixed(4)} m　已知 ${(this.knownDh() >= 0 ? '+' : '') + this.knownDh().toFixed(4)} m<br><strong>閉合差 ${this.misclosureMm().toFixed(1)} mm</strong>（限 3 mm）${Math.abs(this.misclosureMm()) <= 3 ? '　<em class="ok">合格</em>' : '　<em class="bad">超限</em>'}</div>` : ''}`;
+      ${done ? `<div class="lb-foot">Σ高差 ${(sum >= 0 ? '+' : '') + sum.toFixed(4)} m　已知 ${(this.knownDh() >= 0 ? '+' : '') + this.knownDh().toFixed(4)} m<br><strong>閉合差 ${this.misclosureMm().toFixed(1)} mm</strong>（公司內規 3 mm／規範 3√K ${this.specMm().toFixed(1)} mm）${Math.abs(this.misclosureMm()) <= 3 ? '　<em class="ok">合格</em>' : '　<em class="bad">超限</em>'}</div>` : ''}`;
   }
 }
 

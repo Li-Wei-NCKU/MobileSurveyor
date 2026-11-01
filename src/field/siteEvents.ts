@@ -55,6 +55,10 @@ export class SiteEvents {
   private uncleTimer = -1;
   private teaTimer = -1;
   private bumpDone = false;
+  /** 第一波碰腳架的是誰、第二波倒數 (阿黃和小朋友兩個都要出場，前後錯開) */
+  private bumpFirst: '' | 'dog' | 'kid' = '';
+  private bump2Done = false;
+  private bump2T = -1;
   private ownerDone = false;
   private auntieDone = false;
   private callTimer = -1;
@@ -78,7 +82,7 @@ export class SiteEvents {
   // ---------------------------------------------------------------- 測試工具用
   forceBump: '' | 'dog' | 'kid' = '';
   /** 下一個碰腳架事件指定為狗或小孩 (腳架架好且定平完成後觸發) */
-  debugBump(kind: 'dog' | 'kid') { this.forceBump = kind; this.bumpDone = false; this.actors.filter(a => a.kind === 'dog' || a.kind === 'kid').forEach(a => this.remove(a)); }
+  debugBump(kind: 'dog' | 'kid') { this.forceBump = kind; this.bumpDone = false; this.bumpFirst = ''; this.bump2Done = false; this.bump2T = -1; this.actors.filter(a => a.kind === 'dog' || a.kind === 'kid').forEach(a => this.remove(a)); }
   /** 阿伯馬上出現 */
   debugUncle() { if (!this.actors.some(a => a.kind === 'uncle')) this.uncleTimer = 0.1; }
   /** 地主 / 里長馬上出現 (量完天線高後) */
@@ -114,6 +118,7 @@ export class SiteEvents {
     this.uncleChoice = '';
     this.uncleTimer = this.teaTimer = this.callTimer = -1;
     this.bumpDone = this.ownerDone = this.auntieDone = this.callDone = false;
+    this.bumpFirst = ''; this.bump2Done = false; this.bump2T = -1;
     this.blockedUntil = 0;
     this.policeTimer = -1;
     this.policeDone = this.policeArgued = false;
@@ -148,7 +153,7 @@ export class SiteEvents {
   snapshot(): AnyObj {
     return {
       time: this.time, uncleChoice: this.uncleChoice, uncleTimer: this.uncleTimer, teaTimer: this.teaTimer,
-      owner1: this.owner1, owner1Chief: this.owner1Chief, auntie1: this.auntie1, boss1: this.boss1, bumpDone: this.bumpDone, ownerDone: this.ownerDone, auntieDone: this.auntieDone, callTimer: this.callTimer, callDone: this.callDone,
+      owner1: this.owner1, owner1Chief: this.owner1Chief, auntie1: this.auntie1, boss1: this.boss1, bumpDone: this.bumpDone, bumpFirst: this.bumpFirst, bump2Done: this.bump2Done, bump2T: this.bump2T, ownerDone: this.ownerDone, auntieDone: this.auntieDone, callTimer: this.callTimer, callDone: this.callDone,
       blockedUntil: this.blockedUntil, blockedWhy: this.blockedWhy, bumps: this.bumps, tiltTarget: this.tiltTarget,
       dogOutcome: this.dogOutcome, kidsOutcome: this.kidsOutcome,
       policeTimer: this.policeTimer, policeDone: this.policeDone, policeArgued: this.policeArgued,
@@ -159,7 +164,7 @@ export class SiteEvents {
 
   restore(s: AnyObj, phase: string) {
     this.reset();
-    const keys = ['time', 'uncleChoice', 'uncleTimer', 'teaTimer', 'bumpDone', 'ownerDone', 'auntieDone', 'callTimer', 'callDone', 'blockedUntil', 'blockedWhy', 'bumps', 'tiltTarget', 'dogOutcome', 'kidsOutcome', 'policeTimer', 'policeDone', 'policeArgued', 'owner1', 'owner1Chief', 'auntie1', 'boss1'];
+    const keys = ['time', 'uncleChoice', 'uncleTimer', 'teaTimer', 'bumpDone', 'bumpFirst', 'bump2Done', 'bump2T', 'ownerDone', 'auntieDone', 'callTimer', 'callDone', 'blockedUntil', 'blockedWhy', 'bumps', 'tiltTarget', 'dogOutcome', 'kidsOutcome', 'policeTimer', 'policeDone', 'policeArgued', 'owner1', 'owner1Chief', 'auntie1', 'boss1'];
     keys.forEach(k => { if (s[k] !== undefined) (this as AnyObj)[k] = s[k]; });
     let firstKid = true;
     (s.actors || []).forEach((o: AnyObj) => {
@@ -326,15 +331,23 @@ export class SiteEvents {
       if (this.uncleChoice === 'ignore' && this.actors.some(a => a.kind === 'uncle')) {
         const u = this.actors.find(a => a.kind === 'uncle')!;
         this.intro(u, [u], '被你無視的阿伯', '想找個地方靠一下', '他看上你的腳架了……', () => { u.state = 'lean'; });
-      } else if (this.forceBump ? this.forceBump === 'dog' : Math.random() < 0.5) {
-        // 從產業道路上跑過來 (路面沒有高草，鏡頭看得到)
-        const d = this.spawn('dog', -9.2, 30);
-        bark(30, 3);
-        this.intro(d, [d], '土狗　阿黃', '腳架衝撞者', (window as AnyObj).__mobile ? '連點「跑」衝到腳架前面擋住牠！' : '快跑到腳架前的黃圈擋住牠！', () => { d.state = 'rush'; d.t = 0; if ((window as AnyObj).__mobile) this.dogDash(d); });
+        this.bumpFirst = '';                       // 阿伯靠腳架不算，阿黃和小朋友照樣兩個都要來
+        this.bump2T = 24;
       } else {
-        const k1 = this.spawn('kid', -9.4, 29);
-        const k2 = this.spawn('kid', -8.6, 30.2);
-        this.intro(k1, [k1, k2], '放學小朋友 ×2', '好奇心　MAX', '「那是什麼？可以摸嗎？」', () => { k1.state = 'rush'; k2.state = 'follow'; k1.t = k2.t = 0; });
+        const dogFirst = this.forceBump ? this.forceBump === 'dog' : Math.random() < 0.5;
+        this.bumpFirst = dogFirst ? 'dog' : 'kid';
+        this.spawnBump(this.bumpFirst);
+        this.bump2T = 30;                          // 另一個晚一點再來 (一次只應付一件事)
+      }
+    }
+    // 第二波：阿黃和小朋友一天兩個都會遇到 (前一波收乾淨、沒人在講話才開始倒數)
+    if (ph === 'observe' && this.bumpDone && !this.bump2Done && this.bump2T > 0
+        && !rush && !this.actors.some(a => ['kid', 'dog'].includes(a.kind))
+        && !document.querySelector('.dialog-backdrop') && !this.h.app.player.isModalOpen()) {
+      this.bump2T -= dt;
+      if (this.bump2T <= 0) {
+        this.bump2Done = true;
+        this.spawnBump(this.bumpFirst === 'dog' ? 'kid' : 'dog');
       }
     }
     // 量完天線高 → 地主 / 里長 (阿黃／小朋友還在衝就先不要來)
@@ -521,7 +534,7 @@ export class SiteEvents {
     ui.faceSpeaker(a.g);
     const bag = this.h.toolbagNear();
     ui.showDialog('路過的阿伯', '少年欸，恁佇遮測啥？是毋是欲徵收？<br><small>（年輕人，你們在這裡測什麼？是不是要徵收啊？）</small>', [
-      { id: 'explain', text: '阿伯，這是控制點檢測，在更新地圖座標，跟徵收沒有關係。', reply: '喔～原來是按呢。少年欸辛苦啦，等一下來喝茶！', score: 4, tag: '說明清楚，阿伯說要請喝茶' },
+      { id: 'explain', text: '阿伯，我們在做控制點檢測，量這個點的坐標，跟徵收沒有關係。', reply: '喔～原來是按呢。少年欸辛苦啦，等一下來喝茶！', score: 4, tag: '說明清楚，阿伯說要請喝茶' },
       { id: 'order', text: '（從工具袋拿出派工單給阿伯看）', reply: '喔，有公文喔！國土測繪……好啦好啦，我就放心了。', score: 5, tag: '拿派工單給阿伯看，阿伯很放心', disabled: bag ? undefined : '工具袋不在身邊' },
       { id: 'lie', text: '對啊，這邊以後要開高速公路。', reply: '蝦米！我來去叫里長！（阿伯急急忙忙地走了）', score: -4, tag: '亂講要開路，阿伯去叫里長' },
       { id: 'secret', text: '這是國家機密，不能說。', reply: '……（阿伯拿出手機開始拍你）', score: -2, tag: '說是國家機密，被阿伯拍照' },
@@ -909,7 +922,7 @@ export class SiteEvents {
     this.bumps.push(cause);
     sfx.thud();
     ui.toast(`${cause}！腳架歪了，要重新定心定平。`, 'bad', 4000);
-    this.h.app.updateMissionPanel(g.title, g.getTasks(), 1, '腳架被碰歪了。回到儀器按 E 重新定心定平。');
+    this.h.app.updateMissionPanel(g.title, g.getTasks(), 1, '腳架被碰歪了。回到儀器按 E，重新定心定平。');
   }
 
   // ---------------------------------------------------------------- 準心互動
@@ -935,6 +948,20 @@ export class SiteEvents {
       a.state = 'leave'; a.t = 0;
       this.h.addPR(1, '請阿伯離腳架遠一點');
     }
+  }
+
+  /** 放一次「碰腳架」事件：阿黃或小朋友 */
+  private spawnBump(kind: 'dog' | 'kid') {
+    if (kind === 'dog') {
+      // 從產業道路上跑過來 (路面沒有高草，鏡頭看得到)
+      const d = this.spawn('dog', -9.2, 30);
+      bark(30, 3);
+      this.intro(d, [d], '土狗　阿黃', '腳架衝撞者', (window as AnyObj).__mobile ? '連點「跑」衝到腳架前面擋住牠！' : '快跑到腳架前的黃圈擋住牠！', () => { d.state = 'rush'; d.t = 0; if ((window as AnyObj).__mobile) this.dogDash(d); });
+      return;
+    }
+    const k1 = this.spawn('kid', -9.4, 29);
+    const k2 = this.spawn('kid', -8.6, 30.2);
+    this.intro(k1, [k1, k2], '放學小朋友 ×2', '好奇心　MAX', '「那是什麼？可以摸嗎？」', () => { k1.state = 'rush'; k2.state = 'follow'; k1.t = k2.t = 0; });
   }
 
   private guardRing(): GroundRing {
