@@ -11,6 +11,7 @@ import { SM } from './legacy';
 import * as ui from './ui';
 import { attachHoldPad, isMobile, rodHintOn, rodHintDone, type PadVec } from './holdPad';
 import { gameIntro } from '../mobile/intro';
+import { tiltEnable, tiltLive, tiltBubbleStep, tiltOff, type BubbleState } from '../mobile/tilt';
 import * as sfx from './sfx';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -53,6 +54,7 @@ class RtkBench {
   private onUp: ((e: KeyboardEvent) => void) | null = null;
   // 氣泡 (−1~1；圈的半徑 0.28)
   private bx = 0; private by = 0; private vx = 0; private vy = 0;
+  private bub: BubbleState = { bx: 0, by: 0 };
   // 衛星
   private time = 0;
   private sol: Sol = 'none';
@@ -67,12 +69,13 @@ class RtkBench {
       key: 'rtk',
       title: 'RTK 測坐標',
       sub: '對中桿立在鋼釘上，桿子要扶直',
-      lines: ['手指<b>按在圓水準器上不要放</b>，往哪邊按，桿子就往哪邊扶。',
-        '把<b>氣泡壓回中間的圈裡</b>——風會一直推，要一直修。',
+      lines: ['把<b>手機放平</b>（螢幕朝上），手機就是桿子上的圓水準器。',
+        '手機一歪，氣泡就跑掉。把<b>氣泡留在中間的圈裡</b>。',
+        '風會一直推，氣泡會飄，要<b>跟著修</b>，擺在桌上不動是過不了的。',
         '等手簿跳成<b>固定解 FIX</b> 才按<b>「開始記錄」</b>。',
-        '記錄 3 筆；記錄中桿子歪掉，誤差就會記進去。'],
-      short: '按住圓水準器把氣泡壓在圈裡，等固定解 FIX 再按「開始記錄」。',
-      onStart: () => this.startNow(o),
+        '記錄 3 筆；記錄中桿子歪掉，誤差就會記進去。（手機沒有動作感測器時，改用手指按住圓盤來扶。）'],
+      short: '手機放平當圓水準器，把氣泡留在圈裡，等固定解 FIX 再按「開始記錄」。',
+      onStart: () => { tiltEnable(); this.startNow(o); },
     });
   }
 
@@ -133,6 +136,7 @@ class RtkBench {
           </div>
         </div>
         ${isMobile() ? `<div class="rh-pad"><i class="rh-pad-x"></i><span>按住這裡，往要扶的方向推</span>${rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>` : ''}
+        ${isMobile() ? '<div class="rh-tilt flat"><svg viewBox="0 0 56 40" aria-hidden="true"><path d="M8 24 L30 14 L50 20 L28 31 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M8 24v3l20 7 22-11v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="rh-tilt-t">把手機放平，螢幕朝上</span></div>' : ''}
         ${isMobile() ? `<div class="scope-mbar rtk-mbar">
           <button type="button" class="sm-btn primary" data-a="rec">開始記錄</button>
           <button type="button" class="sm-btn ghost" data-a="quit">先不測</button>
@@ -205,11 +209,23 @@ class RtkBench {
     const fy = (this.keys.d ? 1 : 0) - (this.keys.u ? 1 : 0) + this.pad.y;
     // 記錄中要撐住：陣風比平常大 (不然按住推桿就沒事做了)
     const tense = this.rec ? 2.0 : 1;
-    this.vx += ((Math.random() - 0.5) * 0.85 * tense + Math.sin(this.time * 2.4) * 0.3 * tense + w.x * 0.11 * gust + fx * 3.2) * dt;
-    this.vy += ((Math.random() - 0.5) * 0.85 * tense + Math.cos(this.time * 1.9) * 0.3 * tense + w.z * 0.11 * gust + fy * 3.2) * dt;
-    this.vx *= Math.pow(0.15, dt); this.vy *= Math.pow(0.15, dt);
-    this.bx = THREE.MathUtils.clamp(this.bx + this.vx * dt, -1, 1);
-    this.by = THREE.MathUtils.clamp(this.by + this.vy * dt, -1, 1);
+    const sensor = isMobile() && tiltLive();
+    this.root?.classList.toggle('tilt', sensor);
+    if (sensor) {
+      // 手機放平當圓水準器：氣泡 = 手機歪斜 ＋ 擾動 (風)
+      this.bub.bx = this.bx; this.bub.by = this.by;
+      tiltBubbleStep(this.bub, 'flat', this.time, dt, this.rec ? 0.58 : 0.52);
+      this.bx = this.bub.bx; this.by = this.bub.by;
+      const tt = this.root?.querySelector('.rh-tilt-t') as HTMLElement | null;
+      const t2 = tiltOff('flat') > 25 ? '把手機放平，螢幕朝上' : '微微調整手機，讓氣泡留在圈裡';
+      if (tt && tt.textContent !== t2) tt.textContent = t2;
+    } else {
+      this.vx += ((Math.random() - 0.5) * 0.85 * tense + Math.sin(this.time * 2.4) * 0.3 * tense + w.x * 0.11 * gust + fx * 3.2) * dt;
+      this.vy += ((Math.random() - 0.5) * 0.85 * tense + Math.cos(this.time * 1.9) * 0.3 * tense + w.z * 0.11 * gust + fy * 3.2) * dt;
+      this.vx *= Math.pow(0.15, dt); this.vy *= Math.pow(0.15, dt);
+      this.bx = THREE.MathUtils.clamp(this.bx + this.vx * dt, -1, 1);
+      this.by = THREE.MathUtils.clamp(this.by + this.vy * dt, -1, 1);
+    }
     const tilt = Math.hypot(this.bx, this.by); // 1 ≈ 1.5°
     this.pole.rotation.set(this.by * 0.045, 0, -this.bx * 0.045);
 
@@ -256,9 +272,12 @@ class RtkBench {
     bub.style.transform = `translate(${this.bx * vw2 * 0.38}px, ${this.by * vw2 * 0.38}px)`;
     bub.classList.toggle('ok', tilt < 0.38);
     const g = r.querySelector('.rtk-banner .bg-main') as HTMLElement;
-    const gtxt = this.rec ? '記錄中……桿子扶好別動！（<kbd class="cap">WASD</kbd> 保持氣泡在圈裡）'
+    const sens = isMobile() && tiltLive();
+    const gtxt = this.rec ? (sens ? '記錄中……手機端平別動，氣泡留在圈裡！' : '記錄中……桿子扶好別動！（<kbd class="cap">WASD</kbd> 保持氣泡在圈裡）')
       : this.sol === 'fix' ? '手簿是<b class="g">固定解 FIX</b> 了 → 按 <kbd class="cap cap-wide">Space</kbd> 開始記錄'
-        : '用 <kbd class="cap">WASD</kbd> 把氣泡壓在中間圈裡，等手簿跳成<b class="g">固定解 FIX</b>';
+        : sens ? '手機放平，把氣泡留在中間圈裡，等手簿跳成<b class="g">固定解 FIX</b>'
+          : '用 <kbd class="cap">WASD</kbd> 把氣泡壓在中間圈裡，等手簿跳成<b class="g">固定解 FIX</b>';
+    if (isMobile()) { const bk = r.querySelector('.bench-keys') as HTMLElement | null; const kt = sens ? '手機放平當圓水準器' : '按住水準器扶正桿子'; if (bk && bk.textContent !== kt) bk.textContent = kt; }
     const gfix = ui.fixText(gtxt);
     if (g.innerHTML !== gfix) g.innerHTML = gfix;
     const solEl = r.querySelector('.rs-sol') as HTMLElement;

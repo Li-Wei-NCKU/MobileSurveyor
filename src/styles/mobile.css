@@ -640,3 +640,11 @@ body.m-driving .level-book, body.m-driving #level-book { display: none !importan
 .level-book th { font-size: 10px; padding: 2px 3px; white-space: nowrap; }
 .level-book td { padding: 3px; font-size: 12px; }
 .level-book td.hand { font-size: 13.5px; }
+
+/* ---- 動作感測器模式：手機立直扶尺／放平當圓水準器 ---- */
+.rh-tilt { display: none; align-items: center; justify-content: center; gap: 10px; padding: 10px 12px; border: 2px dashed #a07400; border-radius: 12px; background: rgba(250,204,21,.14); color: #8a6100; font: 800 15px var(--font-ui); }
+.rh-tilt svg { width: 30px; height: 42px; flex: none; animation: rh-tilt-wob 1.6s ease-in-out infinite; }
+.rh-tilt.flat svg { width: 44px; height: 32px; }
+@keyframes rh-tilt-wob { 0%,100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+.tilt .rh-tilt { display: flex; }
+.tilt .rh-pad { display: none; }

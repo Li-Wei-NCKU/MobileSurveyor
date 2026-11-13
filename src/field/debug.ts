@@ -4,6 +4,7 @@
  *  - 直接開始某一天、或直接到現場 (設備自動裝好)
  *  - 立刻觸發現場事件、一鍵整平、望遠鏡顯示正確讀數、學弟瞬移
  */
+import { tiltFake, tiltFakeOn } from '../mobile/tilt';
 import type { GameApp, AnyObj } from './legacy';
 import type { FieldDay } from './fieldDay';
 import { JOBS, loadProgress, saveProgress, type JobId } from './jobs';
@@ -145,6 +146,7 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
       <div class="kd-row">
         <button data-a="gc-fly">航拍直接完成</button>
         <button data-a="gc-lowbatt">飛行中：電量剩 22%</button>
+        <button data-a="tilt-fake">假裝動作感測器（開／關）</button>
         <button data-a="gc-eagle">飛行中：大冠鷲馬上來</button>
         <button data-a="gc-v-grandma">飛行中：阿嬤</button>
         <button data-a="gc-v-keeper">飛行中：廟公叫你移車</button>
@@ -233,6 +235,7 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         msg(fd.gcp.debugAuto(a === 'gc-good' ? 'good' : 'bad')); return;
       case 'gc-done': fd.gcp.debugFinish(); close(); return;
       case 'gc-fly': close(); msg(fd.gcp.debugFly()); return;
+      case 'tilt-fake': { const on = !tiltFakeOn(); tiltFake(on); msg(on ? '假感測器開了：I/K 前後傾、J/L 左右傾、U/O 轉向、P 切換立直／放平。' : '假感測器關了。'); return; }
       case 'gc-lowbatt': close(); fd.gcp.uav.log.battery = 22; msg('電量設成 22%，再飛一下就會自動返航。'); return;
       case 'gc-eagle': msg(fd.gcp.uav.debugEagle()); close(); return;
       case 'gc-hammer': (window as AnyObj).__forgetHammer = true; msg('收工時學弟一定會把鐵鎚忘在某個標旁邊。'); return;

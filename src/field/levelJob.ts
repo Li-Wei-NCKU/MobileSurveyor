@@ -17,6 +17,7 @@ import { buildLevelStaff, buildTurningPlate, PLATE_TOP } from './levelStaff';
 import { buildPerson, animateWalk, buildDog, animateDog, buildScooter, buildLorry, ROAD_Z } from './npc';
 import { levelScope } from './scope';
 import { attachHoldPad, isMobile, type PadVec, rodHintOn, rodHintDone } from './holdPad';
+import { tiltEnable, tiltLive, tiltBubbleStep, tiltOff } from '../mobile/tilt';
 import { bench } from './bench';
 import { playBossIntro, setThreat } from './cine';
 import { dust, phonePhoto, GroundRing, Rumble } from './fx';
@@ -2752,15 +2753,16 @@ export class LevelJob {
       key: 'rodhold',
       title: `扶尺　${pt.name}`,
       sub: `學弟${asstName()}要從儀器那邊讀這根尺`,
-      lines: ['手指<b>按在圓水準器上不要放</b>，往哪邊按，尺就往哪邊扶。',
-        '把<b>氣泡壓回中間的圈裡</b>——風會一直推，要一直修。',
+      lines: ['把<b>手機立直</b>，像扶標尺一樣拿著。',
+        '螢幕上的圓水準器就是尺上的氣泡：手機一歪，氣泡就跑掉。把<b>氣泡留在中間的圈裡</b>。',
+        '風會推、手會抖，氣泡會一直飄，要<b>跟著修</b>，擺著不動是過不了的。',
         `學弟喊<b>「要讀囉」</b>的那幾秒最重要，尺歪了讀數就會偏。`,
-        '讀完或想放手，按<b>「放手」</b>。'],
-      short: '按住圓水準器把氣泡壓在圈裡，學弟喊「要讀囉」的時候撐穩。',
+        '讀完或想放手，按<b>「放手」</b>。（手機沒有動作感測器時，改用手指按住圓盤來扶。）'],
+      short: '手機立直當標尺，把氣泡留在圈裡；學弟喊「要讀囉」的時候撐穩。',
       start: '扶好了',
       cancel: '先不扶',
       onCancel: () => this.swapHint(),
-      onStart: () => this.startHoldNow(pt),
+      onStart: () => { tiltEnable(); this.startHoldNow(pt); },
     });
   }
 
@@ -2774,6 +2776,7 @@ export class LevelJob {
       <div class="rh-title">扶尺　${pt.name}</div>
       <div class="rh-vial"><i class="rh-ring"></i><b class="rh-bub"></b></div>
       ${isMobile() ? `<div class="rh-pad"><i class="rh-pad-x"></i><span>按住這裡，往要扶的方向推</span>${rodHintOn() ? '<svg class="rh-tip" viewBox="0 0 120 120" aria-hidden="true"><circle class="tip-dot" cx="60" cy="60" r="9"><animate attributeName="cx" values="60;86;60;34;60" dur="2.6s" repeatCount="indefinite"/><animate attributeName="cy" values="34;60;86;60;34" dur="2.6s" repeatCount="indefinite"/></circle></svg>' : ''}</div>` : ''}
+      ${isMobile() ? '<div class="rh-tilt"><svg viewBox="0 0 40 56" aria-hidden="true"><rect x="11" y="3" width="18" height="38" rx="3.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M20 45v8M14 49l6 5 6-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="rh-tilt-t">把手機立直，像扶尺一樣</span></div>' : ''}
       <div class="rh-prog"><i></i></div>
       <div class="rh-msg"></div>
       <div class="rh-keys">${isMobile() ? '' : '<kbd class="cap">W</kbd><kbd class="cap">A</kbd><kbd class="cap">S</kbd><kbd class="cap">D</kbd> 把氣泡壓在圈裡　<kbd class="cap">E</kbd> 放手'}</div>
@@ -2839,13 +2842,24 @@ export class LevelJob {
     const gust = (0.85 + Math.sin(this.time * 0.7) * 0.3) * tense;
     const px = (k.r ? 1 : 0) - (k.l ? 1 : 0) + this.holdPad.x;
     const py = (k.d ? 1 : 0) - (k.u ? 1 : 0) + this.holdPad.y;
-    h.vx += ((Math.random() - 0.5) * gust + Math.sin(this.time * 2.7) * 0.25 * tense + px * 3.4) * dt;
-    h.vy += ((Math.random() - 0.5) * gust + Math.cos(this.time * 2.2) * 0.25 * tense + py * 3.4) * dt;
-    const damp = Math.pow(0.16, dt);
-    h.vx *= damp; h.vy *= damp;
-    h.bx += h.vx * dt * 2; h.by += h.vy * dt * 2;
-    const r = Math.hypot(h.bx, h.by);
-    if (r > 1) { h.bx /= r; h.by /= r; h.vx *= 0.3; h.vy *= 0.3; }
+    const sensor = isMobile() && tiltLive();
+    h.el.classList.toggle('tilt', sensor);
+    if (sensor) {
+      // 手機立直當標尺：氣泡 = 手機歪斜 ＋ 擾動 (風、手抖)
+      tiltBubbleStep(h, 'upright', this.time, dt, 0.72);
+      const tt = h.el.querySelector('.rh-tilt-t') as HTMLElement | null;
+      const off = tiltOff('upright');
+      const t2 = off > 25 ? '把手機立直，像扶尺一樣' : '微微調整手機，讓氣泡留在圈裡';
+      if (tt && tt.textContent !== t2) tt.textContent = t2;
+    } else {
+      h.vx += ((Math.random() - 0.5) * gust + Math.sin(this.time * 2.7) * 0.25 * tense + px * 3.4) * dt;
+      h.vy += ((Math.random() - 0.5) * gust + Math.cos(this.time * 2.2) * 0.25 * tense + py * 3.4) * dt;
+      const damp = Math.pow(0.16, dt);
+      h.vx *= damp; h.vy *= damp;
+      h.bx += h.vx * dt * 2; h.by += h.vy * dt * 2;
+      const r = Math.hypot(h.bx, h.by);
+      if (r > 1) { h.bx /= r; h.by /= r; h.vx *= 0.3; h.vy *= 0.3; }
+    }
     const busy = this.aJob === 'readBack' || this.aJob === 'readFore';
     const prep = busy && this.aT > 2.6;
     const reading = busy && !prep;
