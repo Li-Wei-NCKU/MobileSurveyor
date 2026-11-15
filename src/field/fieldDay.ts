@@ -40,12 +40,12 @@ let uidSeq = 1000;
 
 /**
  * 每天開工時後斗裡「昨天別組沒卸」的東西 [設備, 格 col, 格 row, 層]。row 0 = 尾門側。
- *  - 第一天：航拍組的無人機箱＋全站儀疊在車尾，礦泉水在旁邊
+ *  - 第一天：後斗是空的 (只有一箱礦泉水靠車頭，不擋路)，先學會怎麼裝
  *  - 第二天：全站儀組的稜鏡桿、全站儀擋在車尾
  *  - 第三天：今天要用的無人機箱被昨天水準組的鐵墊、標尺擋在裡面 (到現場才拿就得先搬開)
  */
 const LEFTOVERS: Record<string, [ItemId, number, number, number][]> = {
-  gnss: [['drone', 0, 0, 0], ['water', 2, 0, 0], ['totalstation', 0, 0, 1]],
+  gnss: [['water', 2, 3, 0]],
   level: [['prism', 0, 0, 0], ['totalstation', 1, 0, 0], ['water', 2, 0, 0]],
   gcp: [['plate', 0, 0, 0], ['staff', 1, 0, 0], ['water', 2, 0, 0], ['drone', 0, 2, 0]],
 };
@@ -960,7 +960,7 @@ export class FieldDay {
           const pp3 = this.app.player.position;
           return { x: pp3.x, z: pp3.z, reach: 99, label: `把${nm(this.carrying)}放在旁邊地上（右下角「放下」），才拿得到${nm(ex0)}` };
         }
-        return { ...tail(), label: `把${nm(this.carrying)}放上後斗`, reach: 1.4 };
+        return { ...tail(), label: `把${nm(this.carrying)}放上後斗${this.J.required.includes(this.carrying) ? this.packLeft() : '（今天用不到，放上去會佔位子）'}`, reach: 1.4 };
       }
       const asst = sub?.asst?.g as THREE.Object3D | undefined;
       const atAsst = (label: string) => (asst ? { x: asst.position.x, z: asst.position.z, label, reach: 2.2, obj: asst } : { ...door(), label, reach: 1.3 });
@@ -986,7 +986,7 @@ export class FieldDay {
         if (g) {
           const onRack = this.onShelf(g.uid);
           return { x: g.obj.position.x, z: g.obj.position.z - (onRack ? 2.4 : 0), reach: onRack ? 1.1 : 1.3,
-            label: onRack ? `到器材架拿${nm(it)}` : `把${nm(it)}搬回後斗`, obj: g.obj };
+            label: onRack ? `到器材架拿${nm(it)}${this.packLeft()}` : `把${nm(it)}搬回後斗${this.packLeft()}`, obj: g.obj };
         }
       }
       return { ...door(), label: '設備齊了，上車出發', reach: 1.3 };
@@ -1061,7 +1061,7 @@ export class FieldDay {
   }
   /** 後斗裡不是今天必帶的東西 (昨天沒卸的) */
   extraInTrunk(): string[] {
-    return this.grid.placed.filter(p => !this.J.required.includes(p.item)).map(p => ITEMS[p.item].name);
+    return this.grid.placed.filter(p => !this.J.required.includes(p.item) && p.item !== 'water').map(p => ITEMS[p.item].name);
   }
 
   /** 手機版：點貨車 → 問要上車還是看後斗 */
@@ -1079,6 +1079,15 @@ export class FieldDay {
   private spotItem(uid: number | null): ItemId | null {
     if (uid == null) return null;
     return this.ground.find(g => g.uid === uid)?.item ?? null;
+  }
+  /** 今天要帶、但還沒上車 (也不在手上) 的設備 */
+  packNeed(): ItemId[] {
+    return this.J.required.filter(it => !this.grid.has(it) && this.carrying !== it && this.extraCarry !== it);
+  }
+  /** 指引後面接的進度：「（還差 2 件）」；都上車了就空字串 (哪幾件寫在器材架畫面裡) */
+  private packLeft(): string {
+    const n = this.packNeed().length;
+    return n ? `（還差 ${n} 件）` : '（帶齊了）';
   }
   /** 某座貨架的格位狀態；level 0 = 最下層 */
   shelfLayout(rack: number) {

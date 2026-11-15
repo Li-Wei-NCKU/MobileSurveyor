@@ -2783,7 +2783,7 @@ export class LevelJob {
         '畫面下方斜斜的圓水準器就是尺上的氣泡：手機一歪，氣泡就跑掉。把<b>氣泡留在中間的圈裡</b>。',
         '風會推、手會抖，氣泡會一直飄，要<b>跟著修</b>，擺著不動是過不了的。',
         `學弟喊<b>「要讀囉」</b>的那幾秒最重要，尺歪了讀數就會偏。`,
-        '讀完或想放手，按<b>「放手」</b>。（手機沒有動作感測器時，改用手指按住圓盤來扶。）'],
+        '讀完或想放手，按<b>「放手」</b>。（手機沒有動作感測器時，改用手指按住下面的推桿區來扶。）'],
       short: '手機立直當標尺，把氣泡留在圈裡；學弟喊「要讀囉」的時候撐穩。',
       start: '扶好了',
       cancel: '先不扶',
@@ -3012,8 +3012,9 @@ export class LevelJob {
   coreFail(): string | null {
     const obs = this.stations.flatMap(s => [s.back, s.fore]).filter((o): o is Obs => !!o && o.read !== undefined);
     if (!this.finished || !obs.length) return '水準路線沒有測完';
-    const w = Math.abs(this.misclosureMm()), lim = this.specMm();
-    return w > lim ? `閉合差 ${w.toFixed(1)} mm，超過規範 3√K = ${lim.toFixed(1)} mm` : null;
+    // 驗收照派工單的要求 (公司內規 3 mm)；規範 3√K 在報告內文另外列出
+    const w = Math.abs(this.misclosureMm());
+    return w > 3 ? `閉合差 ${w.toFixed(1)} mm，超過派工單要求的 3 mm` : null;
   }
 
   reportRow(): ReportRow {

@@ -147,6 +147,8 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         <button data-a="gc-fly">航拍直接完成</button>
         <button data-a="gc-lowbatt">飛行中：電量剩 22%</button>
         <button data-a="tilt-fake">假裝動作感測器（開／關）</button>
+        <button data-a="asst-name">學弟名字：下次開工再問一次</button>
+        <button data-a="gc-mine">第三天：自己的點直接做完（接著指給學弟）</button>
         <button data-a="gc-eagle">飛行中：大冠鷲馬上來</button>
         <button data-a="gc-v-grandma">飛行中：阿嬤</button>
         <button data-a="gc-v-keeper">飛行中：廟公叫你移車</button>
@@ -235,6 +237,18 @@ function open(app: GameApp, field: FieldDay, showMenu: () => void) {
         msg(fd.gcp.debugAuto(a === 'gc-good' ? 'good' : 'bad')); return;
       case 'gc-done': fd.gcp.debugFinish(); close(); return;
       case 'gc-fly': close(); msg(fd.gcp.debugFly()); return;
+      case 'asst-name': saveProgress({ asstChosen: '', asst2: '' }); msg('清掉了。從主選單重開第二天（或沒玩過第二天的第三天），開工前會再問學弟的名字。'); return;
+      case 'gc-mine': {
+        const j = fd.gcp as AnyObj;
+        if (fd.job !== 'gcp' || !j) { msg('第三天才能用。'); return; }
+        if (!j.playerPoint()) { const p = fd.app.player.position; msg(j.debugPlace(p.x + 3, p.z + 3, 1)); }
+        const g = j.playerPoint();
+        if (!g) { msg('這裡佈不了，換個地方再按。'); return; }
+        g.rtk = { sol: 'fix', h: 1, v: 1.8, tiltMm: 3, falseFix: false, wait: 10 };
+        g.photos = { close: 'x', wide: [{ img: 'x', ref: '土地公廟' }, { img: 'x', ref: '大榕樹' }] };
+        j.refreshHint(); j.maybeOfferAsstLay();
+        msg(`${g.name} 的標、RTK、照片都做完了，等一下學弟會說剩下的交給他。`); return;
+      }
       case 'tilt-fake': { const on = !tiltFakeOn(); tiltFake(on); msg(on ? '假感測器開了：I/K 前後傾、J/L 左右傾、U/O 轉向、P 切換立直／放平。' : '假感測器關了。'); return; }
       case 'gc-lowbatt': close(); fd.gcp.uav.log.battery = 22; msg('電量設成 22%，再飛一下就會自動返航。'); return;
       case 'gc-eagle': msg(fd.gcp.uav.debugEagle()); close(); return;

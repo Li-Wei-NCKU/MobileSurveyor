@@ -31,7 +31,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   staff:        { id: 'staff', name: '水準尺', w: 1, d: 2, heavy: false, kind: 'staff', color: 0xdfe3e8, note: '3 公尺銦鋼條碼尺，電子水準儀自動判讀。' },
   totalstation: { id: 'totalstation', name: '全站儀箱', w: 1, d: 1, heavy: true, kind: 'case', color: 0xd9822b, note: '很貴，不要摔。' },
   prism:        { id: 'prism', name: '稜鏡桿', w: 1, d: 2, heavy: false, kind: 'pole', color: 0xd62828, note: '紅白相間的那根。' },
-  drone:        { id: 'drone', name: '無人機箱', w: 2, d: 1, heavy: true, kind: 'case', color: 0x23272e, note: '昨天航拍組沒卸下來。' },
+  drone:        { id: 'drone', name: '無人機箱', w: 2, d: 1, heavy: true, kind: 'case', color: 0x23272e, note: '空拍機、遙控器都在裡面，很重。' },
   paint:        { id: 'paint', name: '噴漆箱', w: 1, d: 1, heavy: false, kind: 'box', color: 0xb68b5a, note: '黑白工程漆，佈標用。' },
   water:        { id: 'water', name: '礦泉水（一箱）', w: 1, d: 1, heavy: true, kind: 'water', color: 0x8fc7ea, note: '24 瓶，夏天外業必備。' },
   hammer:       { id: 'hammer', name: '鐵鎚與鋼釘', w: 1, d: 1, heavy: false, kind: 'box', color: 0xb42318, note: '打釘用的工具箱。' },
