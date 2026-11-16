@@ -134,7 +134,7 @@ body { touch-action: manipulation; }
 .m-pda-status { text-align: center; font-weight: 700; color: #facc15; font-size: 14px; }
 
 /* 選單 / QTE 開著時，動作列讓開 */
-body.bench-active .m-bar, body.qte-active .m-bar { display: none; }
+body.bench-active .m-bar, body.qte-active .m-bar, body.cine-active .m-bar, body.bench-active .m-bar-side, body.qte-active .m-bar-side, body.cine-active .m-bar-side, body.phone-cam .m-bar-side, body.rod-ar .m-bar-side { display: none; }
 body:has(.m-cmd-backdrop) .m-bar, body:has(.dialog-backdrop) .m-bar { display: none; }
 
 /* ---------- QTE ---------- */

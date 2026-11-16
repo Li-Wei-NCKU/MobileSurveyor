@@ -20,7 +20,7 @@ import { attachHoldPad, isMobile, type PadVec, rodHintOn, rodHintDone } from './
 import { tiltEnable, tiltLive, tiltBubbleStep, tiltOff } from '../mobile/tilt';
 import { staffPoseArt, posePop } from '../mobile/poseArt';
 import { bench } from './bench';
-import { playBossIntro, setThreat } from './cine';
+import { playBossIntro, setThreat, playCloseup, cineActive } from './cine';
 import { dust, phonePhoto, GroundRing, Rumble } from './fx';
 import { PoliceCar } from './police';
 import { runQTE, qteActive } from './qte';
@@ -371,7 +371,7 @@ export class LevelJob {
     this.coneObj = null; this.cones = null; this.coneBlock = false; this.copNag = 0;
     this.policeStage = ''; this.policeT = -1; this.pcar?.dispose(); this.pcar = null;
     this.truckDone = false; if (this.lorry) this.sm.scene.remove(this.lorry); this.lorry = null; this.rumble?.stop(); this.vibe = 0;
-    this.wrongPlanned = Math.random() < 0.7; this.wrongDone = false; this.rodWrong = false; this.wrongOs = false;
+    this.wrongPlanned = true;   // 學弟第一次立尺一定會立錯 (立在標石旁邊的地上) this.wrongDone = false; this.rodWrong = false; this.wrongOs = false;
     this.kidsDone = false;
     this.uncle2 = ''; this.mentor = 0;
     this.carryHome = false;
@@ -468,6 +468,7 @@ export class LevelJob {
     this.updateRings();
     this.policeTick(dt, p);
     // 走到學弟附近，看到尺立的位置不太對
+    this.closeupTick();
     if (this.rodWrong && !this.wrongOs && this.rodAt === this.bm1 && Math.hypot(p.x - this.bm1.x, p.z - this.bm1.z) < 7) this.wrongHint(0);
     this.lorryTick(dt, p);
     const threats: { obj: THREE.Object3D; h: number; who: string; dist: number; target?: string }[] = this.actors.filter(a => a.kind === 'dog' && a.state === 'rush' && this.inst).map(a => ({ obj: a.g, h: 0.9, who: '阿黃', dist: Math.hypot(a.g.position.x - this.inst!.position.x, a.g.position.z - this.inst!.position.z), target: '儀器' }));
@@ -1452,6 +1453,41 @@ export class LevelJob {
     this.placeAsstAtRod();
     ui.toast(`（對講機）「${pt.name} 立好了！」`, 'good', 2000);
     this.nextHint();
+    if (this.rodWrong && pt === this.bm1) this.closeupWanted = true;
+  }
+
+  /**
+   * 學弟立錯尺：給一個特寫讓玩家自己看 (尺立在標石旁邊的地上，不講破)，
+   * 看完選「沒事，繼續」或「過去跟他說說」
+   */
+  private closeupWanted = false;
+  private closeupTick() {
+    if (!this.closeupWanted) return;
+    if (!this.rodWrong || this.rodAt !== this.bm1) { this.closeupWanted = false; return; }
+    const p = this.fd.app.player as AnyObj;
+    if (p.isModalOpen() || cineActive() || this.fd.inTruck || p.externalControl) return;
+    this.closeupWanted = false;
+    this.wrongOs = true;    // 特寫就是提示，之後不再跳 OS
+    const bm = this.bm1, q = this.rodXZ(bm);
+    const y = this.sm.heightAt(bm.x, bm.z);
+    const look = new THREE.Vector3((bm.x + q.x) / 2, y + 0.25, (bm.z + q.z) / 2);
+    // 從側面拍：標石和尺底都在畫面裡
+    const dir = new THREE.Vector3(q.z - bm.z, 0, -(q.x - bm.x));
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+    if (dir.x * (p.position.x - look.x) + dir.z * (p.position.z - look.z) < 0) dir.negate();
+    playCloseup(this.fd.app, { look, dir, caption: `學弟${asstName()}在 ${bm.name} 立好尺了……`, far: 2.6, near: 1.4, h: 0.5 }, () => {
+      if (!this.rodWrong) return;
+      ui.showDialog('（你看著學弟那邊）', '嗯……好像哪裡怪怪的？', [
+        { id: 'ok', text: '應該沒事，繼續測。', reply: '（繼續做自己的事。）', score: 0, tag: '' },
+        { id: 'go', text: `過去跟學弟${asstName()}說說。`, reply: `（走過去找學弟${asstName()}。）`, score: 0, tag: '' },
+      ], (o) => {
+        this.relock();
+        if (o.id !== 'go') return;
+        const a = this.asst.g;
+        if (p.walkTo) p.walkTo({ x: a.position.x, z: a.position.z, reach: 1.4, follow: a, label: `走去找學弟${asstName()}`, onArrive: () => { if (this.rodWrong && this.rodAt === this.bm1) this.fixWrongRod(); } });
+        else this.fixWrongRod();
+      });
+    });
   }
 
   private askPlate(pt: Pt) {
@@ -1882,7 +1918,7 @@ export class LevelJob {
     ].filter(Boolean).join('<br>');
     ui.showDialog('（你自己對了一次清單）', rows, [
       { text: miss.length || ex ? '「學弟，再調整一下。」' : '「好，都對。」',
-        reply: miss.length || ex ? '（照下面的指引把差額處理掉再出發。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
+        reply: miss.length || ex ? '（自己把缺的儀器搬好。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
     ], () => {
       this.relock();
       if (miss.length || ex) ui.toast('下面的指引會帶你把少的拿上車、多的放回架上。', 'info', 4200);
@@ -2150,11 +2186,13 @@ export class LevelJob {
     for (let i = 0; i < n; i++) {
       const c = S.buildCone();
       const cx = x - i * 2.6, cz = z;
-      c.position.set(cx, this.sm.heightAt(cx, cz), cz);
+      // 群組本身放在第一個錐的位置 (指引「走過去收」是走到群組的位置；之前群組在原點，會帶玩家跑去很遠的地方)
+      c.position.set(cx - x, this.sm.heightAt(cx, cz), 0);
       g.add(c);
       // 一個一個擺下去
       if (animate) { c.visible = false; setTimeout(() => { c.visible = true; sfx.thud(); }, 250 + i * 380); }
     }
+    g.position.set(x, 0, z);
     g.userData = { type: 'coneLine' };
     this.sm.scene.add(g);
     this.ensureInteractive(g, true);

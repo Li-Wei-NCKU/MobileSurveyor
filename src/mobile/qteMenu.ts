@@ -38,6 +38,8 @@ export function runQTE(o: QteOpts) {
   if (active) return;
   active = true;
   if (document.exitPointerLock) document.exitPointerLock();
+  // 已經在近距離操作 (例如無人機飛行中) 就不要在結束時把 bench-active 拿掉，否則鏡頭會被玩家搶回去
+  const hadBench = document.body.classList.contains('bench-active');
   document.body.classList.add('bench-active', 'qte-active');
   const root = document.createElement('div');
   root.className = 'qte m-qte';
@@ -65,7 +67,8 @@ export function runQTE(o: QteOpts) {
     root.classList.add(ok ? 'win' : 'lose');
     setTimeout(() => {
       root.remove();
-      document.body.classList.remove('qte-active', 'bench-active');
+      document.body.classList.remove('qte-active');
+      if (!hadBench) document.body.classList.remove('bench-active');
       active = false;
       o.onDone(ok);
     }, ok ? 500 : 900);

@@ -104,7 +104,7 @@ function open(o: Opts) {
           const how = blockers.some(x => x.layer > p.layer) ? '壓住' : '擋住';
           const names = blockers.map(x => shortName(x.item)).join('、');
           // 自己搬到地上：流汗 (之後一陣子水分消耗加快)、搬下來的收工要記得搬回去
-          say(`<b>${shortName(p.item)}</b> 被 <b>${names}</b> ${how}了。<span class="m-tun-row"><button type="button" class="m-tunstack" data-w="self">自己搬到地上<small>會加速水分消耗</small></button></span>`, 'bad');
+          say(`<b>${shortName(p.item)}</b> 被 <b>${names}</b> ${how}了。<span class="m-tun-row"><button type="button" class="m-tunstack" data-w="self">把擋住的東西搬下車<small>會加速水分消耗</small></button></span>`, 'bad');
           sfx.error();
           render();
           bd.querySelectorAll<HTMLButtonElement>('.m-tunstack[data-w]').forEach(ub => {

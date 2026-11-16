@@ -315,6 +315,8 @@ export class GcpJob {
       this.autoT -= dt;
       if (this.autoT <= 0) { this.autoT = 6; this.asstPickOwn(); }
     }
+    // 自己的點做完了就交棒 (拍完最後一張照片時手機還開著，那一下條件不成立；之後每一幀再試)
+    if (!this.asstOffered && !this.asstLays && !this.laid && ['site', 'observe'].includes(this.fd.phase) && this.firstDone()) this.maybeOfferAsstLay();
     // 地圖上指好的點：前一個做完就接著做下一個
     if (!this.asstJob && this.asstQueue.length && this.asstLays && !this.laid && ['site', 'observe'].includes(this.fd.phase) && !this.fd.inTruck) {
       const q = this.asstQueue.shift()!;
@@ -686,7 +688,7 @@ export class GcpJob {
   private pending(): number { return this.asstQueue.length + (this.asstJob ? 1 : 0); }
 
   /** 玩家那個點做完了：剩下的交給學弟，直接打開外業地圖讓玩家指位置 */
-  maybeOfferAsstLay() {
+  maybeOfferAsstLay(delay = 1400) {
     if (this.asstOffered || this.asstLays || this.laid) return;
     if (!this.firstDone() || this.gcps.length >= MAX_GCP) return;
     if (this.benchBusy() || this.phone || this.fd.inTruck || this.fd.app.player.isModalOpen()) return;
@@ -703,7 +705,7 @@ export class GcpJob {
         this.refreshHint();
         setTimeout(() => { if (!this.map && !this.fd.app.player.isModalOpen()) this.openMap(); }, 300);
       });
-    }, 1400);
+    }, delay);
   }
 
   /**
@@ -898,6 +900,7 @@ export class GcpJob {
     if (this.stopAsstJob()) return;
     const fd = this.fd;
     const nm = `學弟${asstName()}`;
+    if (this.firstDone() && !this.asstLays && !this.laid && ['site', 'observe'].includes(fd.phase)) { this.asstOffered = false; this.maybeOfferAsstLay(0); return; }
     if (fd.phase === 'brief') return;
     if (fd.phase === 'prep' || fd.phase === 'toSite') {
       if (fd.phase === 'prep' && !this.loading && !this.loaded) { this.offerLoad(); return; }
@@ -1133,7 +1136,7 @@ export class GcpJob {
     ].filter(Boolean).join('<br>');
     ui.showDialog('（你自己對了一次清單）', rows, [
       { text: miss.length || ex ? '「學弟，再調整一下。」' : '「好，都對。」',
-        reply: miss.length || ex ? '（照下面的指引把差額處理掉再出發。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
+        reply: miss.length || ex ? '（自己把缺的儀器搬好。）' : '（清單對完，可以出發了。）', score: 0, tag: '', id: 'ok' },
     ], () => {
       this.relock();
       if (miss.length || ex) ui.toast('下面的指引會帶你把少的拿上車、多的放回架上。', 'info', 4200);
@@ -1877,7 +1880,9 @@ export class GcpJob {
         : { x: c.x, z: c.z, label: '走進紅框航測範圍裡，再點地面佈標', reach: 6 };
     }
     const a = this.asst?.g;
-    if (a) return { x: a.position.x, z: a.position.z, label: '跟學弟說可以收工了', reach: 2.0, obj: a as THREE.Object3D };
+    // 自己的點做完、還沒交給學弟：去跟他說 (以前會掉到「可以收工了」，點了沒反應)
+    if (a && this.firstDone() && !this.asstLays && !this.laid) return { x: a.position.x, z: a.position.z, label: `跟學弟${asstName()}說剩下的點交給他`, reach: 2.0, obj: a as THREE.Object3D };
+    if (a && this.gcps.length >= 4) return { x: a.position.x, z: a.position.z, label: '跟學弟說可以收工了', reach: 2.0, obj: a as THREE.Object3D };
     return null;
   }
 
